@@ -1,0 +1,10 @@
+ultralytics
+numpy
+pandas
+matplotlib
+pyyaml
+pillow
+scikit-learn
+opencv-python-headless
+huggingface_hub
+

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+yolo*.pt
+runs/
+tmp/
+*.cache
+data/fathomnet_underwater_tutorial_bundle/
+data/**/dataset.runtime.yaml
