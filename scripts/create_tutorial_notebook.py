@@ -114,6 +114,10 @@ This notebook is a 3-hour, Colab-first tutorial for training and comparing image
 
 You only need a mathematical foundation to start. You can follow the guided path from classification to segmentation, or jump into the section that matches your comfort level.
 
+You will work with images derived from the [FathomNet Database](https://database.fathomnet.org/fathomnet/#/), an expert-annotated underwater image database designed to support marine science and machine learning. The problem is simple to state and hard to solve: given an underwater image, decide what organisms or biological structures are present, where they are, and sometimes which pixels belong to each object.
+
+Underwater imagery is not just "ImageNet, but blue." Vehicle lights, water-column attenuation, turbidity, motion blur, scale changes, partial animals, transparent bodies, and long-tailed taxonomy all make this a useful stress test for computer vision.
+
 Main source anchors:
 
 - FathomNet Database: https://database.fathomnet.org/fathomnet/#/
@@ -132,9 +136,9 @@ Main source anchors:
 
 Suggested live timing:
 
-1. `0-15 min`: setup, runtime check, and skip map.
+1. `0-15 min`: setup, runtime check, and first look at FathomNet imagery.
 2. `15-30 min`: YOLO warm-up on a familiar image.
-3. `30-50 min`: FathomNet context and dataset exploration.
+3. `30-50 min`: dataset and annotation exploration.
 4. `50-75 min`: classification from organism crops.
 5. `75-115 min`: binary object detection with YOLO.
 6. `115-150 min`: instance segmentation with YOLO.
@@ -148,6 +152,15 @@ The default notebook behavior is:
 - use a prebuilt compact data bundle,
 - run live YOLO training only when a GPU is available,
 - fall back to cached training curves and cached SAM3-style outputs when a GPU, model weights, or Hugging Face access are unavailable.
+
+Vocabulary you will see:
+
+- **YOLO** means "You Only Look Once"; in this notebook it refers to Ultralytics YOLO models for classification, detection, and segmentation.
+- A **bounding box** is a rectangle around an object, usually represented by center point, width, and height.
+- **Segmentation** means predicting pixels or regions, not just a class or rectangle.
+- **Instance segmentation** means predicting a separate mask for each object instance.
+- **COCO** means "Common Objects in Context"; here it mostly refers to a widely used JSON annotation format for images, categories, bounding boxes, and segmentations.
+- **SAM3** is a promptable segmentation model in Meta's Segment Anything family; here you will use text prompts such as `"fish"` or `"small crab"`.
 """
         ),
         md(
@@ -259,6 +272,38 @@ BUNDLE_ROOT = download_tutorial_bundle(
 
 print(f"Bundle root: {BUNDLE_ROOT}")
 print((BUNDLE_ROOT / "manifest.json").read_text()[:1200])
+"""
+        ),
+        md(
+            r"""
+## First Look At FathomNet Imagery
+
+Before training anything, look at the data. These are full underwater images from the compact FathomNet-derived bundle. Some organisms are obvious, some are tiny, and some are visually ambiguous even for a human.
+
+As you scan the grid, ask:
+
+- What would count as an "object"?
+- Which organisms are easy to crop and classify?
+- Which organisms need a bounding box?
+- Which organisms would really need a pixel mask?
+"""
+        ),
+        code(
+            r"""
+from scripts.tutorial_data import get_task_paths
+from scripts.tutorial_viz import show_image_grid
+
+detect_paths = get_task_paths("detect", BUNDLE_ROOT)
+segment_paths = get_task_paths("segment", BUNDLE_ROOT)
+classification_paths = get_task_paths("classification", BUNDLE_ROOT)
+coco_paths = get_task_paths("coco", BUNDLE_ROOT)
+
+first_look_images = sorted((detect_paths["root"] / "images" / "val").glob("*.jpg"))[:8]
+show_image_grid(
+    first_look_images,
+    titles=[path.stem[:8] for path in first_look_images],
+    columns=4,
+)
 """
         ),
         md(
@@ -385,34 +430,18 @@ Advanced:
         ),
         md(
             r"""
-## FathomNet And Underwater Imagery
-
-Now switch domains. The [FathomNet Database](https://database.fathomnet.org/fathomnet/#/) is the source you should open when you want to see the broader image archive, taxonomy, and annotation context behind this tutorial. The FathomNet site describes the database as expert-annotated, machine-learning-ready underwater visual data for marine science and computer vision.
-
-Underwater imagery is not just "ImageNet, but blue." Common modeling complications include:
-
-- changing illumination from vehicle lights and water-column attenuation;
-- scale changes from vehicle altitude, camera angle, and organism distance;
-- motion blur, turbidity, backscatter, and low contrast;
-- partial animals, occlusion, and organisms with non-rigid transparent bodies;
-- sparse or incomplete labels, where unlabeled organisms may still be present;
-- a long tail of rare taxa.
-
-That is why this workshop starts with a compact teaching bundle rather than the full archive. You can focus on model behavior first, then scale up after the session.
-"""
-        ),
-        md(
-            r"""
 ## Dataset Exploration
 
-The bundle has four useful views of the same general problem:
+You have now seen the images. Next, inspect how the same underlying problem is represented for different machine learning tasks.
+
+The bundle has four useful views:
 
 - `classification_crops`: organism crops grouped by coarse class.
 - `yolo_detect_binary`: one-class object detection labels.
 - `yolo_segment_binary`: one-class instance segmentation polygon labels.
 - `sam3_cached_outputs`: SAM3-like prompt outputs for the fallback lab.
 
-The full source COCO-style annotation file in the local YOLO project has `119,096` images, `280,118` annotations, and `1,897` categories. This tutorial uses a compact subset so you can work in Colab without spending the session on data transfer.
+The full source COCO-style annotation file in the local YOLO project has `119,096` images, `280,118` annotations, and `1,897` categories. **COCO** means "Common Objects in Context"; the name comes from a benchmark dataset, but people also use "COCO format" to mean a JSON annotation schema with image records, category records, and annotation records. This tutorial uses a compact subset so you can work in Colab without spending the session on data transfer.
 
 For the live detection and segmentation exercises, the YOLO labels deliberately omit extremely tiny annotations. That keeps the training signal about visible organisms rather than letting dense fragments dominate the classroom metrics. The original COCO subset is still included for discussion and after-session extensions.
 
@@ -438,21 +467,6 @@ print(json.dumps({
     "workshop_classes": manifest["workshop_classes"],
     "stats": manifest["stats"],
 }, indent=2))
-"""
-        ),
-        code(
-            r"""
-detect_paths = get_task_paths("detect", BUNDLE_ROOT)
-segment_paths = get_task_paths("segment", BUNDLE_ROOT)
-classification_paths = get_task_paths("classification", BUNDLE_ROOT)
-coco_paths = get_task_paths("coco", BUNDLE_ROOT)
-
-underwater_images = sorted((detect_paths["root"] / "images" / "val").glob("*.jpg"))[:8]
-show_image_grid(
-    underwater_images,
-    titles=[path.stem[:8] for path in underwater_images],
-    columns=4,
-)
 """
         ),
         code(
@@ -539,7 +553,7 @@ Advanced:
             r"""
 # Part 1: Classification From Organism Crops
 
-This is the easiest entry point because each example has one label. It is still not trivial: underwater crops can be low contrast, partially occluded, visually ambiguous, and taxonomically long-tailed.
+Classification means predicting one label for an input. This is the easiest entry point because each organism crop has one coarse label. It is still not trivial: underwater crops can be low contrast, partially occluded, visually ambiguous, and taxonomically long-tailed.
 
 Here the image crop is a tensor
 
@@ -737,7 +751,7 @@ Advanced:
             r"""
 # Part 2: Binary Object Detection With YOLO
 
-Detection asks for *where* the animals or biological structures are, not only what crop class they belong to.
+Detection asks for *where* the animals or biological structures are, not only what crop class they belong to. In this section the target is a **bounding box**, or a rectangle that encloses an object.
 
 Instead of one label per crop, the output is a set of boxes:
 
@@ -763,7 +777,7 @@ Precision and recall depend on a confidence threshold:
 
 $$\mathrm{precision}=\frac{TP}{TP+FP}, \qquad \mathrm{recall}=\frac{TP}{TP+FN}.$$
 
-Average precision summarizes the precision-recall curve as that threshold changes.
+Average precision, or **AP**, summarizes the precision-recall curve as that threshold changes. **mAP** means mean average precision. In YOLO reports, `mAP50` uses an IoU threshold of `0.50`, while `mAP50-95` averages over several IoU thresholds from `0.50` to `0.95`, making it a stricter localization metric.
 """
         ),
         md(
@@ -1117,7 +1131,7 @@ Advanced:
             r"""
 # Part 3: Instance Segmentation With YOLO
 
-Instance segmentation upgrades a rectangle to a shape. A mask can be viewed as a set of pixels
+Segmentation means predicting regions or pixels. **Instance segmentation** upgrades a rectangle to a separate shape for each object instance. A mask can be viewed as a set of pixels
 
 $$M \subseteq \Omega,\qquad \Omega=\{1,\dots,H\}\times\{1,\dots,W\}.$$
 

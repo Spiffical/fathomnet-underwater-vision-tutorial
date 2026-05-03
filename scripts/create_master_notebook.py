@@ -183,6 +183,20 @@ def add_answer_key_cells(notebook: dict) -> None:
 
     insert_after_heading(
         notebook,
+        "## First Look At FathomNet Imagery",
+        md(
+            r"""
+### Master Notes: First Look
+
+- Let the room look before naming every task. Good early prompts are: "What is easy to see?", "What is small?", and "What would be hard to annotate consistently?"
+- This section intentionally uses full images before crops, boxes, or masks so the modeling choices feel motivated by the visual problem.
+- If a participant says the image has many unlabeled things, that is a useful opening for incomplete labels and distribution shift.
+"""
+        ),
+    )
+
+    insert_after_heading(
+        notebook,
         "### YOLO Warm-Up Exercises",
         md(
             r"""
