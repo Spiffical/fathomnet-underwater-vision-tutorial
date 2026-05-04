@@ -86,6 +86,93 @@ def summarize_classification_dataset(dataset_root: str | Path) -> dict[str, obje
     return summary
 
 
+def classification_examples_by_class(
+    dataset_root: str | Path,
+    *,
+    split: str = "val",
+    examples_per_class: int = 1,
+    max_classes: int | None = None,
+) -> list[dict[str, object]]:
+    """Select labeled classification images from an ImageFolder-style split.
+
+    Each returned item has an `image_path` and `class_name`. The helper keeps
+    the notebook focused on the modeling question: here the target is one class
+    label per image, with no boxes or masks.
+    """
+
+    split_dir = Path(dataset_root) / split
+    if not split_dir.exists():
+        return []
+
+    rows: list[dict[str, object]] = []
+    class_dirs = sorted(path for path in split_dir.iterdir() if path.is_dir())
+    if max_classes is not None:
+        class_dirs = class_dirs[:max_classes]
+
+    for class_dir in class_dirs:
+        for image_path in _image_files(class_dir)[:examples_per_class]:
+            rows.append({"image_path": image_path, "class_name": class_dir.name})
+    return rows
+
+
+def yolo_label_instance_count(label_path: str | Path) -> int:
+    """Count non-empty instance rows in one YOLO label file."""
+
+    path = Path(label_path)
+    if not path.exists():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+
+
+def _matching_image_for_label(label_path: Path, image_dir: Path) -> Path | None:
+    matches = [
+        image_path
+        for image_path in image_dir.glob(f"{label_path.stem}.*")
+        if image_path.suffix.lower() in IMAGE_EXTENSIONS
+    ]
+    return sorted(matches)[0] if matches else None
+
+
+def select_yolo_examples(
+    dataset_root: str | Path,
+    *,
+    split: str = "val",
+    min_instances: int = 2,
+    limit: int = 4,
+) -> list[dict[str, object]]:
+    """Select YOLO examples with several labeled objects in one image.
+
+    Multi-object examples are useful early in the tutorial because they make
+    the distinction between image classification, object detection, and
+    instance segmentation visible without needing a long explanation.
+    """
+
+    root = Path(dataset_root)
+    image_dir = root / "images" / split
+    label_dir = root / "labels" / split
+    if not image_dir.exists() or not label_dir.exists():
+        return []
+
+    examples: list[dict[str, object]] = []
+    for label_path in sorted(label_dir.glob("*.txt")):
+        instance_count = yolo_label_instance_count(label_path)
+        if instance_count < min_instances:
+            continue
+        image_path = _matching_image_for_label(label_path, image_dir)
+        if image_path is None:
+            continue
+        examples.append(
+            {
+                "image_path": image_path,
+                "label_path": label_path,
+                "instance_count": instance_count,
+            }
+        )
+
+    examples.sort(key=lambda item: (-int(item["instance_count"]), str(item["label_path"])))
+    return examples[:limit]
+
+
 def _load_dataset_yaml(dataset_yaml: str | Path) -> tuple[Path, dict]:
     yaml_path = Path(dataset_yaml).resolve()
     with yaml_path.open("r", encoding="utf-8") as handle:

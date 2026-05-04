@@ -150,6 +150,52 @@ def draw_yolo_masks(
     return ax
 
 
+def plot_ultralytics_results(
+    results,
+    *,
+    titles: Sequence[str] | None = None,
+    columns: int = 2,
+    max_images: int = 4,
+    figsize: tuple[int, int] | None = None,
+) -> None:
+    """Display Ultralytics prediction overlays in a compact grid.
+
+    `result.plot()` draws the model's predicted class names, confidence scores,
+    boxes, and masks when they are available. This is useful for contrasting
+    ground-truth labels with model predictions in the notebook.
+    """
+
+    plt, _ = _require_matplotlib()
+    if not isinstance(results, (list, tuple)):
+        results = [results]
+    results = list(results)[:max_images]
+    if not results:
+        print("No prediction results to display.")
+        return
+
+    rows = (len(results) + columns - 1) // columns
+    figsize = figsize or (5 * columns, 4 * rows)
+    fig, axes = plt.subplots(rows, columns, figsize=figsize)
+    if rows == 1 and columns == 1:
+        axes = [axes]
+    else:
+        axes = list(getattr(axes, "flat", axes))
+
+    for index, ax in enumerate(axes):
+        ax.axis("off")
+        if index >= len(results):
+            continue
+        plotted = results[index].plot()
+        # Ultralytics returns BGR arrays for OpenCV compatibility; matplotlib
+        # expects RGB.
+        ax.imshow(plotted[..., ::-1])
+        if titles and index < len(titles):
+            ax.set_title(titles[index], fontsize=9)
+
+    plt.tight_layout()
+    plt.show()
+
+
 def plot_training_curves(
     results_csv_path: str | Path,
     *,
@@ -279,4 +325,3 @@ def plot_sam3_result(
     plt.tight_layout()
     plt.show()
     return ax
-

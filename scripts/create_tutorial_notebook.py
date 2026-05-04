@@ -455,13 +455,18 @@ The images and annotations are FathomNet-derived. The bundle includes `licenses/
 from collections import Counter
 
 from scripts.tutorial_data import (
+    classification_examples_by_class,
     get_task_paths,
     load_manifest,
-    summarize_classification_dataset,
-    summarize_dataset,
-    validate_yolo_dataset,
+    select_yolo_examples,
 )
-from scripts.tutorial_viz import draw_yolo_boxes, show_image_grid
+from scripts.tutorial_models import predict_examples
+from scripts.tutorial_viz import draw_yolo_boxes, draw_yolo_masks, plot_ultralytics_results, show_image_grid
+
+detect_paths = get_task_paths("detect", BUNDLE_ROOT)
+segment_paths = get_task_paths("segment", BUNDLE_ROOT)
+classification_paths = get_task_paths("classification", BUNDLE_ROOT)
+coco_paths = get_task_paths("coco", BUNDLE_ROOT)
 
 manifest = load_manifest(BUNDLE_ROOT)
 print(json.dumps({
@@ -469,6 +474,148 @@ print(json.dumps({
     "workshop_classes": manifest["workshop_classes"],
     "stats": manifest["stats"],
 }, indent=2))
+"""
+        ),
+        md(
+            r"""
+### View 1: Classification Images
+
+In a classification dataset, each image has one target class. These are organism crops rather than full scene annotations, so the model sees image pixels and predicts one coarse biological label. There is no geometry target here: no center point, no bounding box, no polygon.
+"""
+        ),
+        code(
+            r"""
+classification_examples = classification_examples_by_class(
+    classification_paths["root"],
+    split="val",
+    examples_per_class=2,
+)
+
+show_image_grid(
+    [item["image_path"] for item in classification_examples],
+    titles=[item["class_name"] for item in classification_examples],
+    columns=5,
+    max_images=10,
+)
+"""
+        ),
+        md(
+            r"""
+### View 2: YOLO Object Detection Labels
+
+Object detection asks for a class and a rectangle for each object. The YOLO detection rows here have the form
+
+`class_id x_center y_center width height`
+
+where the four geometry values are normalized to `[0, 1]` by the image width and height. The examples below are selected because they contain multiple labeled objects.
+"""
+        ),
+        code(
+            r"""
+import matplotlib.pyplot as plt
+
+detect_multi_examples = select_yolo_examples(
+    detect_paths["root"],
+    split="val",
+    min_instances=2,
+    limit=4,
+)
+
+fig, axes = plt.subplots(2, 2, figsize=(11, 8))
+for ax, item in zip(axes.flat, detect_multi_examples):
+    draw_yolo_boxes(item["image_path"], item["label_path"], class_names={0: "object"}, ax=ax)
+    ax.set_title(f"{Path(item['image_path']).stem[:8]}: {item['instance_count']} objects")
+for ax in axes.flat[len(detect_multi_examples):]:
+    ax.axis("off")
+plt.tight_layout()
+plt.show()
+"""
+        ),
+        md(
+            r"""
+### View 3: YOLO Instance Segmentation Labels
+
+Instance segmentation asks for a separate region for each object. In YOLO segmentation format, each row starts with the class id and is followed by normalized polygon coordinates:
+
+`class_id x1 y1 x2 y2 ... xK yK`
+
+The target is more informative than a box, but it is also more expensive to annotate and usually harder to learn.
+"""
+        ),
+        code(
+            r"""
+segment_multi_examples = select_yolo_examples(
+    segment_paths["root"],
+    split="val",
+    min_instances=2,
+    limit=4,
+)
+
+fig, axes = plt.subplots(2, 2, figsize=(11, 8))
+for ax, item in zip(axes.flat, segment_multi_examples):
+    draw_yolo_masks(item["image_path"], item["label_path"], class_names={0: "object"}, ax=ax)
+    ax.set_title(f"{Path(item['image_path']).stem[:8]}: {item['instance_count']} masks")
+for ax in axes.flat[len(segment_multi_examples):]:
+    ax.axis("off")
+plt.tight_layout()
+plt.show()
+"""
+        ),
+        md(
+            r"""
+### YOLO Prediction Mode: Class + Geometry
+
+The previous two views showed labels from the dataset. Now run pretrained YOLO models in prediction mode. A detection model predicts a class label, confidence score, and bounding box for each proposed object. A segmentation model predicts a class label, confidence score, box, and mask.
+
+These pretrained models were trained on general images, not FathomNet taxa. If the predictions look odd, that is a useful domain-shift observation rather than a failure of the cell.
+"""
+        ),
+        code(
+            r"""
+from pathlib import Path
+
+prediction_images = [item["image_path"] for item in detect_multi_examples[:2]]
+
+if not prediction_images:
+    print("No multi-object examples were found for prediction.")
+else:
+    try:
+        detection_prediction_results = predict_examples(
+            "yolo11n.pt",
+            prediction_images,
+            imgsz=416,
+            conf=0.20,
+            save=False,
+            project=REPO_ROOT / "runs" / "dataset_exploration",
+            name="pretrained_detection",
+            exist_ok=True,
+            verbose=False,
+        )
+        plot_ultralytics_results(
+            detection_prediction_results,
+            titles=[f"detection prediction: {Path(path).stem[:8]}" for path in prediction_images],
+            columns=2,
+        )
+
+        segmentation_prediction_results = predict_examples(
+            "yolo11n-seg.pt",
+            prediction_images,
+            imgsz=416,
+            conf=0.20,
+            save=False,
+            project=REPO_ROOT / "runs" / "dataset_exploration",
+            name="pretrained_segmentation",
+            exist_ok=True,
+            verbose=False,
+        )
+        plot_ultralytics_results(
+            segmentation_prediction_results,
+            titles=[f"segmentation prediction: {Path(path).stem[:8]}" for path in prediction_images],
+            columns=2,
+        )
+    except Exception as exc:
+        print("Pretrained YOLO underwater prediction skipped.")
+        print(type(exc).__name__, exc)
 """
         ),
         code(
@@ -520,18 +667,6 @@ plt.grid(alpha=0.25)
 plt.show()
 """
         ),
-        code(
-            r"""
-example_labels = sorted((detect_paths["root"] / "labels" / "val").glob("*.txt"))[:4]
-fig, axes = plt.subplots(2, 2, figsize=(10, 7))
-for ax, label_path in zip(axes.flat, example_labels):
-    image_path = detect_paths["root"] / "images" / "val" / f"{label_path.stem}.jpg"
-    draw_yolo_boxes(image_path, label_path, class_names={0: "object"}, ax=ax)
-    ax.set_title(label_path.stem[:8])
-plt.tight_layout()
-plt.show()
-"""
-        ),
         md(
             r"""
 ### Dataset Exploration Questions
@@ -545,10 +680,13 @@ Intermediate:
 
 - Compare the `coco/subset.json` category counts with the binary YOLO labels.
 - What information is lost when many biological categories are collapsed into `object`?
+- Compare the ground-truth detection boxes with the pretrained YOLO predictions.
+- Which model errors look like taxonomy errors, localization errors, or confidence-threshold errors?
 
 Advanced:
 
 - The live YOLO labels drop extremely tiny boxes. Predict how the histogram and mAP would change if those boxes were restored.
+- The segmentation labels contain more geometry than boxes. Where would that extra information matter scientifically?
 """
         ),
         md(
