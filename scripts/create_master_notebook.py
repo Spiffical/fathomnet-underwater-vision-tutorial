@@ -248,8 +248,8 @@ For a three-hour live session, a reasonable pacing target is:
 ### Master Notes: Dataset Exploration
 
 - Good obvious examples usually have high contrast, a large organism, and a clean background. Subtle examples often involve small objects, partial bodies, or organism-background camouflage.
-- The three visual views are intentionally distinct: classification crops show one label per image, detection labels show multiple boxes per full image, and segmentation labels show multiple object-shaped regions per full image.
-- The pretrained YOLO prediction cell is there to show the complete model output shape: class, confidence, and box or mask. It is fine if the predicted class names are biologically wrong; that motivates domain shift and fine-tuning.
+- The visual views are intentionally distinct: full images with category labels show "what is present," classification crops show one coarse label per crop, detection labels show multiple boxes per full image, and segmentation labels show multiple object-shaped regions per full image.
+- Keep this section about truth labels only. Save model predictions for the YOLO warm-up and training/evaluation sections.
 - Collapsing many categories into `object` removes biological identity, taxonomy, and ecological meaning, but makes a short detection exercise easier and more stable.
 - Restoring tiny boxes would push the area histogram left, increase the number of labels per image, and likely lower short-run mAP for a small model because localization becomes much harder.
 - The COCO subset is useful for reasoning about categories and conversion; the prepared YOLO folders are useful for short live training.

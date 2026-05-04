@@ -458,10 +458,10 @@ from scripts.tutorial_data import (
     classification_examples_by_class,
     get_task_paths,
     load_manifest,
+    select_coco_category_examples,
     select_yolo_examples,
 )
-from scripts.tutorial_models import predict_examples
-from scripts.tutorial_viz import draw_yolo_boxes, draw_yolo_masks, plot_ultralytics_results, show_image_grid
+from scripts.tutorial_viz import draw_yolo_boxes, draw_yolo_masks, show_image_grid
 
 detect_paths = get_task_paths("detect", BUNDLE_ROOT)
 segment_paths = get_task_paths("segment", BUNDLE_ROOT)
@@ -478,9 +478,41 @@ print(json.dumps({
         ),
         md(
             r"""
-### View 1: Classification Images
+### View 1: Full Images With Truth Category Labels
 
-In a classification dataset, each image has one target class. These are organism crops rather than full scene annotations, so the model sees image pixels and predicts one coarse biological label. There is no geometry target here: no center point, no bounding box, no polygon.
+This is a full-image, classification-style view of the COCO-format truth labels. The title above each image lists categories annotated as present in that image. This view hides boxes and masks on purpose, so you can separate the question "what is present?" from the question "where is it?"
+"""
+        ),
+        code(
+            r"""
+coco_category_examples = select_coco_category_examples(
+    coco_paths["json"],
+    [detect_paths["root"] / "images" / "train", detect_paths["root"] / "images" / "val"],
+    limit=6,
+)
+
+def compact_category_title(item, max_categories=3):
+    '''Make a short title from ground-truth category names.'''
+
+    names = item["category_names"]
+    visible = ", ".join(names[:max_categories])
+    if len(names) > max_categories:
+        visible += f", +{len(names) - max_categories}"
+    return f"{visible}\\n{item['annotation_count']} annotations"
+
+show_image_grid(
+    [item["image_path"] for item in coco_category_examples],
+    titles=[compact_category_title(item) for item in coco_category_examples],
+    columns=3,
+    max_images=6,
+)
+"""
+        ),
+        md(
+            r"""
+### View 2: Classification Crops With Truth Labels
+
+The training classifier uses organism crops grouped by coarse class. Each crop has one truth label from the folder name. There is still no geometry target here: no center point, no bounding box, no polygon.
 """
         ),
         code(
@@ -501,7 +533,7 @@ show_image_grid(
         ),
         md(
             r"""
-### View 2: YOLO Object Detection Labels
+### View 3: YOLO Object Detection Truth Labels
 
 Object detection asks for a class and a rectangle for each object. The YOLO detection rows here have the form
 
@@ -533,7 +565,7 @@ plt.show()
         ),
         md(
             r"""
-### View 3: YOLO Instance Segmentation Labels
+### View 4: YOLO Instance Segmentation Truth Labels
 
 Instance segmentation asks for a separate region for each object. In YOLO segmentation format, each row starts with the class id and is followed by normalized polygon coordinates:
 
@@ -559,63 +591,6 @@ for ax in axes.flat[len(segment_multi_examples):]:
     ax.axis("off")
 plt.tight_layout()
 plt.show()
-"""
-        ),
-        md(
-            r"""
-### YOLO Prediction Mode: Class + Geometry
-
-The previous two views showed labels from the dataset. Now run pretrained YOLO models in prediction mode. A detection model predicts a class label, confidence score, and bounding box for each proposed object. A segmentation model predicts a class label, confidence score, box, and mask.
-
-These pretrained models were trained on general images, not FathomNet taxa. If the predictions look odd, that is a useful domain-shift observation rather than a failure of the cell.
-"""
-        ),
-        code(
-            r"""
-from pathlib import Path
-
-prediction_images = [item["image_path"] for item in detect_multi_examples[:2]]
-
-if not prediction_images:
-    print("No multi-object examples were found for prediction.")
-else:
-    try:
-        detection_prediction_results = predict_examples(
-            "yolo11n.pt",
-            prediction_images,
-            imgsz=416,
-            conf=0.20,
-            save=False,
-            project=REPO_ROOT / "runs" / "dataset_exploration",
-            name="pretrained_detection",
-            exist_ok=True,
-            verbose=False,
-        )
-        plot_ultralytics_results(
-            detection_prediction_results,
-            titles=[f"detection prediction: {Path(path).stem[:8]}" for path in prediction_images],
-            columns=2,
-        )
-
-        segmentation_prediction_results = predict_examples(
-            "yolo11n-seg.pt",
-            prediction_images,
-            imgsz=416,
-            conf=0.20,
-            save=False,
-            project=REPO_ROOT / "runs" / "dataset_exploration",
-            name="pretrained_segmentation",
-            exist_ok=True,
-            verbose=False,
-        )
-        plot_ultralytics_results(
-            segmentation_prediction_results,
-            titles=[f"segmentation prediction: {Path(path).stem[:8]}" for path in prediction_images],
-            columns=2,
-        )
-    except Exception as exc:
-        print("Pretrained YOLO underwater prediction skipped.")
-        print(type(exc).__name__, exc)
 """
         ),
         code(
@@ -680,8 +655,8 @@ Intermediate:
 
 - Compare the `coco/subset.json` category counts with the binary YOLO labels.
 - What information is lost when many biological categories are collapsed into `object`?
-- Compare the ground-truth detection boxes with the pretrained YOLO predictions.
-- Which model errors look like taxonomy errors, localization errors, or confidence-threshold errors?
+- Compare the category-only full-image view with the box and mask views.
+- What extra information do you gain when the truth labels include geometry?
 
 Advanced:
 

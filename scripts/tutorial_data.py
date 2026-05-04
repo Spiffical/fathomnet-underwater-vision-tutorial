@@ -173,6 +173,67 @@ def select_yolo_examples(
     return examples[:limit]
 
 
+def select_coco_category_examples(
+    coco_json_path: str | Path,
+    image_roots: str | Path | list[str | Path],
+    *,
+    limit: int = 6,
+    min_annotations: int = 1,
+) -> list[dict[str, object]]:
+    """Select full images with their ground-truth COCO category labels.
+
+    This is a classification-style view of full images: it shows which taxa or
+    object categories are annotated as present, but it intentionally hides the
+    boxes and masks so the geometric tasks remain visually distinct.
+    """
+
+    with Path(coco_json_path).open("r", encoding="utf-8") as handle:
+        coco = json.load(handle)
+
+    if isinstance(image_roots, (str, Path)):
+        roots = [Path(image_roots)]
+    else:
+        roots = [Path(root) for root in image_roots]
+
+    images_by_stem: dict[str, Path] = {}
+    for root in roots:
+        for image_path in _image_files(root):
+            images_by_stem.setdefault(image_path.stem, image_path)
+
+    names_by_category_id = {category["id"]: category["name"] for category in coco.get("categories", [])}
+    image_records = {image["id"]: image for image in coco.get("images", [])}
+    category_names_by_image: dict[int, list[str]] = {}
+    annotation_count_by_image: Counter[int] = Counter()
+
+    for annotation in coco.get("annotations", []):
+        image_id = annotation["image_id"]
+        category_name = names_by_category_id.get(annotation["category_id"], str(annotation["category_id"]))
+        category_names_by_image.setdefault(image_id, []).append(category_name)
+        annotation_count_by_image[image_id] += 1
+
+    rows: list[dict[str, object]] = []
+    for image_id, category_names in category_names_by_image.items():
+        if annotation_count_by_image[image_id] < min_annotations:
+            continue
+        image_record = image_records.get(image_id)
+        if not image_record:
+            continue
+        image_stem = Path(image_record["file_name"]).stem
+        image_path = images_by_stem.get(image_stem)
+        if image_path is None:
+            continue
+        rows.append(
+            {
+                "image_path": image_path,
+                "category_names": sorted(set(category_names)),
+                "annotation_count": annotation_count_by_image[image_id],
+            }
+        )
+
+    rows.sort(key=lambda item: (-int(item["annotation_count"]), str(item["image_path"])))
+    return rows[:limit]
+
+
 def _load_dataset_yaml(dataset_yaml: str | Path) -> tuple[Path, dict]:
     yaml_path = Path(dataset_yaml).resolve()
     with yaml_path.open("r", encoding="utf-8") as handle:
