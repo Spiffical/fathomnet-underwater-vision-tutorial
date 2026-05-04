@@ -110,6 +110,8 @@ if "build_train_args" not in globals():
             r"""
 # Underwater Computer Vision With FathomNet
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Spiffical/fathomnet-underwater-vision-tutorial/blob/main/notebooks/fathomnet_underwater_vision_tutorial.ipynb)
+
 This notebook introduces computer vision workflows for underwater imagery using FathomNet-derived data. You will train and compare image classification, object detection, instance segmentation, and promptable segmentation workflows.
 
 You only need a mathematical foundation to start. You can follow the guided path from classification to segmentation, or jump into the section that matches your comfort level.

@@ -10,6 +10,14 @@ from create_tutorial_notebook import build_notebook, md
 
 STUDENT_TITLE = "# Underwater Computer Vision With FathomNet"
 MASTER_TITLE = "# Underwater Computer Vision With FathomNet (Master Notebook)"
+STUDENT_COLAB_URL = (
+    "https://colab.research.google.com/github/Spiffical/fathomnet-underwater-vision-tutorial/"
+    "blob/main/notebooks/fathomnet_underwater_vision_tutorial.ipynb"
+)
+MASTER_COLAB_URL = (
+    "https://colab.research.google.com/github/Spiffical/fathomnet-underwater-vision-tutorial/"
+    "blob/main/notebooks/fathomnet_underwater_vision_tutorial_master.ipynb"
+)
 
 
 def source_text(cell: dict) -> str:
@@ -58,9 +66,10 @@ def add_master_badge(notebook: dict) -> None:
     """Update the title and add a short instructor-facing note."""
 
     first_cell = notebook["cells"][0]
+    first_cell_source = source_text(first_cell)
     set_source(
         first_cell,
-        source_text(first_cell).replace(STUDENT_TITLE, MASTER_TITLE)
+        first_cell_source.replace(STUDENT_TITLE, MASTER_TITLE).replace(STUDENT_COLAB_URL, MASTER_COLAB_URL)
         + "\n\nThis instructor copy includes worked code solutions and short answer-key notes. Use the non-master notebook for the live participant version.\n",
     )
 
