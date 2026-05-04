@@ -491,20 +491,25 @@ coco_category_examples = select_coco_category_examples(
     limit=6,
 )
 
-def compact_category_title(item, max_categories=3):
+def compact_category_title(item, max_categories=2):
     '''Make a short title from ground-truth category names.'''
 
+    from textwrap import wrap
+
     names = item["category_names"]
-    visible = ", ".join(names[:max_categories])
+    visible = ", ".join(names[:max_categories]) if names else "no named categories"
     if len(names) > max_categories:
-        visible += f", +{len(names) - max_categories}"
-    return f"{visible}\\n{item['annotation_count']} annotations"
+        visible += f", +{len(names) - max_categories} more"
+    title_lines = wrap(visible, width=34, break_long_words=False) or [visible]
+    title_lines.append(f"{item['annotation_count']} annotations")
+    return "\n".join(title_lines)
 
 show_image_grid(
     [item["image_path"] for item in coco_category_examples],
     titles=[compact_category_title(item) for item in coco_category_examples],
     columns=3,
     max_images=6,
+    figsize=(14, 8),
 )
 """
         ),
@@ -794,7 +799,7 @@ The learning rate controls the scale of each gradient step. In a small workshop 
 - useful: validation accuracy improves without wild instability;
 - too large: loss or validation accuracy jumps around or degrades.
 
-For live groups, split the room across `lr0 = 1e-4`, `1e-3`, and `1e-2`. Each group runs one setting, then you compare results on the board.
+Try one or more learning rates from `lr0 = 1e-4`, `1e-3`, and `1e-2`. The cached curves give you a baseline comparison, and a live GPU run lets you see how much the result changes from one run to the next.
 """
         ),
         code(
@@ -818,7 +823,7 @@ if RUN_CLASSIFICATION_LR_LAB and RUN_LIVE_TRAINING:
         plot_training_curves(row["results_csv"], title=f"classification lr0={row['lr0']}")
 else:
     print("Learning-rate lab is ready.")
-    print("Set RUN_CLASSIFICATION_LR_LAB = True on a GPU, or assign one lr0 value to each group.")
+    print("Set RUN_CLASSIFICATION_LR_LAB = True on a GPU to run these trials live.")
     print("Suggested lr0 values:", LR_VALUES)
 """
         ),
@@ -850,7 +855,7 @@ Beginner:
 Intermediate:
 
 - Use the Ultralytics classification docs to find the direct `YOLO(...).train(...)` pattern for classification.
-- Compare your group's `lr0` result with another group's result.
+- Compare one `lr0` result with another `lr0` result.
 - Change `imgsz` from `224` to `320`, then decide whether the extra computation was worth it.
 - Pick one class and inspect three crops that seem visually ambiguous.
 
@@ -975,7 +980,7 @@ for threshold in [0.25, 0.5, 0.8]:
         code(
             section_bootstrap + r"""
 # Section bootstrap: detection
-from scripts.tutorial_data import get_task_paths, make_tiny_detection_dataset, validate_yolo_dataset
+from scripts.tutorial_data import get_task_paths, make_tiny_detection_dataset, select_yolo_examples, validate_yolo_dataset
 from scripts.tutorial_models import prediction_count_at_threshold
 from scripts.tutorial_viz import draw_yolo_boxes, plot_training_curves
 
@@ -987,11 +992,37 @@ CACHED_DETECT_RESULTS = BUNDLE_ROOT / "cached_training" / "detection" / "results
 print(json.dumps(validate_yolo_dataset(DETECT_YAML, task="detect"), indent=2)[:3000])
 """
         ),
+        md(
+            r"""
+### Detection Truth Example: Several Objects In One Image
+
+This plot shows one validation image from the YOLO detection dataset. The green rectangles are **ground-truth labels**, not model predictions. Each row in the matching `.txt` label file says: class id, normalized box center, normalized box width, and normalized box height.
+
+The example is selected to contain multiple labeled objects so the detection task is visually clear.
+"""
+        ),
         code(
             r"""
-first_detect_label = next((DETECT_ROOT / "labels" / "val").glob("*.txt"))
-first_detect_image = DETECT_ROOT / "images" / "val" / f"{first_detect_label.stem}.jpg"
-draw_yolo_boxes(first_detect_image, first_detect_label, class_names={0: "object"})
+import matplotlib.pyplot as plt
+
+PREFERRED_DETECT_EXAMPLE_STEM = "eb7661e6-ded7-49dc-b335-0e7dfbb5d775"
+detect_candidates = select_yolo_examples(DETECT_ROOT, split="val", min_instances=2, limit=6)
+detect_example = next(
+    (
+        item
+        for item in detect_candidates
+        if item["image_path"].stem == PREFERRED_DETECT_EXAMPLE_STEM
+    ),
+    detect_candidates[0],
+)
+first_detect_label = detect_example["label_path"]
+first_detect_image = detect_example["image_path"]
+DETECT_EXAMPLE_STEM = first_detect_image.stem
+
+print(f"Showing {DETECT_EXAMPLE_STEM}: {detect_example['instance_count']} truth boxes")
+ax = draw_yolo_boxes(first_detect_image, first_detect_label, class_names={0: "object"})
+ax.set_title(f"Detection truth labels: {detect_example['instance_count']} objects")
+plt.show()
 """
         ),
         code(
@@ -1136,6 +1167,129 @@ else:
         ),
         md(
             r"""
+### Advanced Exercise: Start From FathomNet Megalodon
+
+The detector above starts from a general YOLO checkpoint. A stronger underwater baseline is [FathomNet Megalodon](https://huggingface.co/FathomNet/megalodon), a YOLOv8x object detector fine-tuned by MBARI/FathomNet to detect one class: `object`. The model card reports that it was trained from publicly available FathomNet localizations and is meant for post-processing underwater images and video.
+
+This is an advanced path because the checkpoint is larger than `yolo11n.pt`, and fine-tuning it can be slow on a small free GPU. The key question is worth the trouble:
+
+> Does a domain-specific FathomNet checkpoint give you a better starting point than a generic image checkpoint?
+
+Useful references:
+
+- FathomNet Megalodon model card: https://huggingface.co/FathomNet/megalodon
+- Ultralytics prediction mode: https://docs.ultralytics.com/modes/predict/
+- Ultralytics training and fine-tuning mode: https://docs.ultralytics.com/modes/train/
+
+The code below is intentionally close to the documentation pattern: download weights, load `YOLO(weights)`, run `predict`, then optionally run `train`.
+"""
+        ),
+        code(
+            r"""
+RUN_MEGALODON_ADVANCED = False
+
+MEGALODON_REPO_ID = "FathomNet/megalodon"
+MEGALODON_FILENAME = "mbari-megalodon-yolov8x.pt"
+MEGALODON_MODEL_PATH = None
+
+if RUN_MEGALODON_ADVANCED:
+    from huggingface_hub import hf_hub_download
+
+    # This public checkpoint is about 137 MB. Hugging Face caches downloads, so
+    # rerunning the cell should not re-download the file unless the cache is cleared.
+    MEGALODON_MODEL_PATH = Path(
+        hf_hub_download(
+            repo_id=MEGALODON_REPO_ID,
+            filename=MEGALODON_FILENAME,
+            cache_dir=REPO_ROOT / ".cache" / "huggingface",
+        )
+    )
+    print(f"Megalodon weights: {MEGALODON_MODEL_PATH}")
+else:
+    print("Advanced Megalodon path is off by default.")
+    print("Set RUN_MEGALODON_ADVANCED = True to download the FathomNet checkpoint.")
+"""
+        ),
+        code(
+            r"""
+if RUN_MEGALODON_ADVANCED and MEGALODON_MODEL_PATH is not None:
+    from ultralytics import YOLO
+    import matplotlib.pyplot as plt
+
+    megalodon_model = YOLO(str(MEGALODON_MODEL_PATH))
+    megalodon_prediction = megalodon_model.predict(
+        source=str(first_detect_image),
+        imgsz=640,
+        conf=0.25,
+        save=False,
+        project=REPO_ROOT / "runs" / "megalodon",
+        name="predict_before_finetune",
+        exist_ok=True,
+        verbose=False,
+    )[0]
+
+    plt.figure(figsize=(8, 5))
+    plt.imshow(megalodon_prediction.plot()[..., ::-1])
+    plt.axis("off")
+    plt.title("Megalodon prediction before fine-tuning")
+    plt.show()
+
+    print("Compare this prediction with the green ground-truth boxes above.")
+else:
+    print("Prediction cell ready. Turn on RUN_MEGALODON_ADVANCED first.")
+"""
+        ),
+        md(
+            r"""
+#### Optional Fine-Tuning Scaffold
+
+Fine-tuning means continuing optimization from an existing checkpoint instead of starting from generic weights. For this small tutorial dataset, use a small learning rate and very few epochs first. Your goal is not to produce a publishable model in one run; your goal is to learn whether the domain-specific starting point changes the early training behavior.
+
+Before running the cell, read the Ultralytics training examples and identify:
+
+- where the checkpoint path enters `YOLO(...)`;
+- where the dataset YAML enters `model.train(data=...)`;
+- which arguments control image size, batch size, learning rate, and epoch count.
+"""
+        ),
+        code(
+            r"""
+RUN_MEGALODON_FINE_TUNE = False
+
+if RUN_MEGALODON_ADVANCED and RUN_MEGALODON_FINE_TUNE and RUN_LIVE_TRAINING and MEGALODON_MODEL_PATH is not None:
+    from ultralytics import YOLO
+
+    megalodon_finetune_args = build_train_args(
+        epochs=2,
+        imgsz=640,
+        batch=2,
+        lr0=0.0005,
+        patience=5,
+        project=REPO_ROOT / "runs" / "megalodon",
+        name="finetune_tutorial_binary",
+    )
+
+    megalodon_finetune_model = YOLO(str(MEGALODON_MODEL_PATH))
+    megalodon_finetune_result = megalodon_finetune_model.train(
+        data=str(DETECT_YAML),
+        **megalodon_finetune_args,
+    )
+    megalodon_finetune_save_dir = (
+        getattr(megalodon_finetune_result, "save_dir", None)
+        or getattr(megalodon_finetune_model.trainer, "save_dir", None)
+    )
+    plot_training_curves(
+        Path(megalodon_finetune_save_dir) / "results.csv",
+        metric_columns=["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"],
+        title="Megalodon fine-tuning metrics",
+    )
+else:
+    print("Fine-tuning scaffold is ready.")
+    print("Set RUN_MEGALODON_ADVANCED = True, RUN_MEGALODON_FINE_TUNE = True, and use a GPU.")
+"""
+        ),
+        md(
+            r"""
 ### Exercise: COCO Boxes To YOLO Boxes
 
 The bundle already includes YOLO labels so you can spend most of the session on modeling. The real conversion step is deliberately left as an exercise.
@@ -1237,7 +1391,8 @@ Intermediate:
 Advanced:
 
 - Turn on `RUN_TINY_OVERFIT_LAB` and check whether the model can memorize 8 training images.
-- Compare a generic YOLO checkpoint with a FathomNet detector such as Megalodon if you have downloaded the weights.
+- Turn on the Megalodon advanced path, compare its predictions with `yolo11n.pt`, and decide whether the domain-specific checkpoint changes the failure modes.
+- Fine-tune Megalodon for one or two epochs, then compare its early metrics with the generic checkpoint run.
 - Explain how the precision-recall curve would move if the model became more conservative.
 - Sketch how you would convert the whole `coco/subset.json` file into YOLO detection labels.
 """
@@ -1272,7 +1427,7 @@ where polygon coordinates are normalized to `[0,1]`.
         code(
             section_bootstrap + r"""
 # Section bootstrap: segmentation
-from scripts.tutorial_data import get_task_paths, validate_yolo_dataset
+from scripts.tutorial_data import get_task_paths, select_yolo_examples, validate_yolo_dataset, yolo_label_instance_count
 from scripts.tutorial_viz import draw_yolo_masks, plot_training_curves
 
 SEGMENT_PATHS = get_task_paths("segment", BUNDLE_ROOT)
@@ -1283,11 +1438,40 @@ CACHED_SEGMENT_RESULTS = BUNDLE_ROOT / "cached_training" / "segmentation" / "res
 print(json.dumps(validate_yolo_dataset(SEGMENT_YAML, task="segment"), indent=2)[:3000])
 """
         ),
+        md(
+            r"""
+### Segmentation Truth Example: Same Image, More Geometry
+
+This plot shows **ground-truth polygon labels** from the YOLO segmentation dataset. When possible, it uses the same image as the detection example above so you can compare boxes with masks directly. The colored regions are annotation polygons, not model predictions.
+"""
+        ),
         code(
             r"""
-first_segment_label = next((SEGMENT_ROOT / "labels" / "val").glob("*.txt"))
-first_segment_image = SEGMENT_ROOT / "images" / "val" / f"{first_segment_label.stem}.jpg"
-draw_yolo_masks(first_segment_image, first_segment_label, class_names={0: "object"})
+import matplotlib.pyplot as plt
+
+preferred_stem = globals().get("DETECT_EXAMPLE_STEM")
+if preferred_stem is not None:
+    candidate_label = SEGMENT_ROOT / "labels" / "val" / f"{preferred_stem}.txt"
+    candidate_image = SEGMENT_ROOT / "images" / "val" / f"{preferred_stem}.jpg"
+else:
+    candidate_label = None
+    candidate_image = None
+
+if candidate_label is not None and candidate_label.exists() and candidate_image.exists():
+    first_segment_label = candidate_label
+    first_segment_image = candidate_image
+    segment_instance_count = yolo_label_instance_count(first_segment_label)
+    print(f"Showing the same image as detection: {preferred_stem}")
+else:
+    segment_example = select_yolo_examples(SEGMENT_ROOT, split="val", min_instances=2, limit=1)[0]
+    first_segment_label = segment_example["label_path"]
+    first_segment_image = segment_example["image_path"]
+    segment_instance_count = segment_example["instance_count"]
+    print(f"Showing {first_segment_image.stem}: {segment_instance_count} truth masks")
+
+ax = draw_yolo_masks(first_segment_image, first_segment_label, class_names={0: "object"})
+ax.set_title(f"Segmentation truth labels: {segment_instance_count} masks")
+plt.show()
 """
         ),
         md(

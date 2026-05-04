@@ -218,7 +218,7 @@ For a three-hour live session, a reasonable pacing target is:
             r"""
 ### Master Notes: First Look
 
-- Let the room look before naming every task. Good early prompts are: "What is easy to see?", "What is small?", and "What would be hard to annotate consistently?"
+- Let participants look before naming every task. Good early prompts are: "What is easy to see?", "What is small?", and "What would be hard to annotate consistently?"
 - This section intentionally uses full images before crops, boxes, or masks so the modeling choices feel motivated by the visual problem.
 - If a participant says the image has many unlabeled things, that is a useful opening for incomplete labels and distribution shift.
 """
@@ -313,6 +313,21 @@ For a three-hour live session, a reasonable pacing target is:
 - Validation mAP may remain noisy because the validation set is also tiny and may contain different-looking objects.
 - If training loss does not drop, first suspect data paths, label format, learning rate, batch size, or whether the labels actually align with the images.
 - This is a debugging test, not a final model-quality test.
+"""
+        ),
+    )
+
+    insert_after_heading(
+        notebook,
+        "### Advanced Exercise: Start From FathomNet Megalodon",
+        md(
+            r"""
+### Master Notes: Megalodon
+
+- This should be framed as an advanced optional path. The checkpoint is much larger than `yolo11n.pt`, and YOLOv8x fine-tuning can be slow on small GPUs.
+- The useful comparison is not only metric-vs-metric. Ask whether Megalodon finds underwater object-like regions that generic COCO weights miss.
+- Keep `epochs` low at first. The first fine-tuning question is whether the run is wired correctly and whether early validation behavior looks plausible.
+- Because Megalodon is already a one-class FathomNet detector, it is a good match for the tutorial's binary `object` labels.
 """
         ),
     )

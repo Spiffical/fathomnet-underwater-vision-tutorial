@@ -29,6 +29,7 @@ DEFAULT_IMPORTS = {
     "yaml": "pyyaml",
     "PIL": "pillow",
     "sklearn": "scikit-learn",
+    "huggingface_hub": "huggingface_hub",
 }
 
 
@@ -221,4 +222,3 @@ def download_tutorial_bundle(
     if not manifest_path.exists():
         raise FileNotFoundError(f"Bundle unpacked, but no manifest was found at {manifest_path}")
     return output_path
-
