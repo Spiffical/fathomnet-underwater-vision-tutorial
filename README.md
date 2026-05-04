@@ -1,6 +1,6 @@
 # Underwater Computer Vision With FathomNet
 
-Colab-first tutorial notebooks for a 3-hour graduate-level workshop on image classification, object detection, instance segmentation, and promptable segmentation for underwater imagery.
+Colab-first tutorial notebooks on image classification, object detection, instance segmentation, and promptable segmentation for underwater imagery.
 
 ## Notebooks
 

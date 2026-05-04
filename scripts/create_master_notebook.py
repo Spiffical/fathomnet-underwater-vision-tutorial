@@ -183,6 +183,27 @@ def add_answer_key_cells(notebook: dict) -> None:
 
     insert_after_heading(
         notebook,
+        "## How To Use This Notebook",
+        md(
+            r"""
+### Suggested Instructor Timing
+
+For a three-hour live session, a reasonable pacing target is:
+
+1. `0-15 min`: setup, runtime check, and first look at FathomNet imagery.
+2. `15-30 min`: YOLO warm-up on a familiar image.
+3. `30-50 min`: dataset and annotation exploration.
+4. `50-75 min`: classification from organism crops.
+5. `75-115 min`: binary object detection with YOLO.
+6. `115-150 min`: instance segmentation with YOLO.
+7. `150-175 min`: SAM3 text-prompt segmentation.
+8. `175-180 min`: wrap-up and extension ideas.
+"""
+        ),
+    )
+
+    insert_after_heading(
+        notebook,
         "## First Look At FathomNet Imagery",
         md(
             r"""

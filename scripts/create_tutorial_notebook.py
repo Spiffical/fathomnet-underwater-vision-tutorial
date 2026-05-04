@@ -110,7 +110,7 @@ if "build_train_args" not in globals():
             r"""
 # Underwater Computer Vision With FathomNet
 
-This notebook is a 3-hour, Colab-first tutorial for training and comparing image recognition, object detection, instance segmentation, and promptable segmentation workflows on underwater imagery.
+This notebook introduces computer vision workflows for underwater imagery using FathomNet-derived data. You will train and compare image classification, object detection, instance segmentation, and promptable segmentation workflows.
 
 You only need a mathematical foundation to start. You can follow the guided path from classification to segmentation, or jump into the section that matches your comfort level.
 
@@ -134,18 +134,18 @@ Main source anchors:
             r"""
 ## How To Use This Notebook
 
-Suggested live timing:
+Start with setup and the first image grid so the visual problem is concrete. After that, you can follow the notebook in order or jump to the section that matches your comfort level.
 
-1. `0-15 min`: setup, runtime check, and first look at FathomNet imagery.
-2. `15-30 min`: YOLO warm-up on a familiar image.
-3. `30-50 min`: dataset and annotation exploration.
-4. `50-75 min`: classification from organism crops.
-5. `75-115 min`: binary object detection with YOLO.
-6. `115-150 min`: instance segmentation with YOLO.
-7. `150-175 min`: SAM3 text-prompt segmentation.
-8. `175-180 min`: wrap-up and extension ideas.
+The main path is:
 
-The sections are intentionally independent. If you skip ahead, run the short **section bootstrap** cell at the top of that section.
+1. inspect FathomNet-derived underwater images and annotations;
+2. warm up with a pretrained YOLO model on a familiar image;
+3. train a small classifier on organism crops;
+4. train and evaluate a binary object detector;
+5. train and evaluate an instance segmentation model;
+6. try text-prompt segmentation with cached or live SAM3 outputs.
+
+The sections are intentionally independent. If you skip ahead, run the short **section bootstrap** cell at the top of that section first.
 
 The default notebook behavior is:
 
@@ -180,7 +180,7 @@ The notebook works in two common modes:
 
 Data storage model for the session:
 
-- The canonical workshop bundle is `data/fathomnet_underwater_tutorial_bundle.zip` in the instructor/project copy.
+- The canonical data bundle is `data/fathomnet_underwater_tutorial_bundle.zip` in the repository.
 - For Colab, the default `BUNDLE_URL` points to the zip in this GitHub repository.
 - In Colab, you download your own copy into the temporary runtime, then the notebook extracts it under `data/fathomnet_underwater_tutorial_bundle`.
 - Nothing is downloaded live from FathomNet during the session.
@@ -1429,7 +1429,7 @@ You moved through four levels of supervision and geometry:
 
 Good after-session projects:
 
-- train on the 500-image or full dataset outside the 3-hour tutorial,
+- train on the 500-image or full dataset after this notebook,
 - convert the coarse biological label plan into a multiclass detection task,
 - compare YOLO training against FathomNet pretrained checkpoints,
 - use SAM3 prompt outputs to propose labels for active learning,
