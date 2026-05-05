@@ -328,6 +328,7 @@ For a three-hour live session, a reasonable pacing target is:
 - The useful comparison is not only metric-vs-metric. Ask whether Megalodon finds underwater object-like regions that generic COCO weights miss.
 - Keep `epochs` low at first. The first fine-tuning question is whether the run is wired correctly and whether early validation behavior looks plausible.
 - Because Megalodon is already a one-class FathomNet detector, it is a good match for the tutorial's binary `object` labels.
+- The participant notebook intentionally gives hints rather than complete code here. For a quick solution, use `hf_hub_download(...)`, then `YOLO(str(path)).predict(...)`, then `YOLO(str(path)).train(data=str(DETECT_YAML), ...)`.
 """
         ),
     )

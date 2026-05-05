@@ -236,6 +236,13 @@ if str(REPO_ROOT) not in sys.path:
 print(f"Repository root: {REPO_ROOT}")
 """
         ),
+        md(
+            r"""
+### Dependencies And Runtime
+
+Now check the Python dependencies, inspect the GPU/runtime, and set the random seed. In Colab this cell installs missing packages; locally it only checks what is already importable.
+"""
+        ),
         code(
             r"""
 from scripts.tutorial_setup import (
@@ -262,6 +269,13 @@ RUN_LIVE_TRAINING = bool(RUNTIME.get("has_cuda", False))
 set_reproducible_seed(42)
 
 print(f"RUN_LIVE_TRAINING = {RUN_LIVE_TRAINING}")
+"""
+        ),
+        md(
+            r"""
+### Download Or Unpack The Tutorial Bundle
+
+This cell prepares the compact FathomNet-derived data bundle. In Colab, each participant gets a temporary runtime copy. Locally, the notebook uses the zip already stored in the repository when available.
 """
         ),
         code(
@@ -598,6 +612,13 @@ plt.tight_layout()
 plt.show()
 """
         ),
+        md(
+            r"""
+### Annotation Counts And Category Mix
+
+You have now seen the truth labels visually. The next two cells summarize the same bundle numerically: first the COCO-style categories and annotation counts, then the object-size distribution used by the YOLO detection labels.
+"""
+        ),
         code(
             r"""
 coco = json.loads(coco_paths["json"].read_text())
@@ -616,6 +637,13 @@ for name, count in category_counts.most_common(12):
 print()
 print("Annotations per image:")
 print(f"  min={min(annotations_by_image.values())}, max={max(annotations_by_image.values())}, mean={sum(annotations_by_image.values()) / len(annotations_by_image):.2f}")
+"""
+        ),
+        md(
+            r"""
+### Object Size Distribution
+
+This histogram shows how large the detection boxes are as a fraction of image area. It matters because tiny objects are harder to localize, and the tutorial labels intentionally filter out extremely tiny boxes for the live training exercises.
 """
         ),
         code(
@@ -694,6 +722,13 @@ $$\ell(z,y)=-\log p_y.$$
 The live exercise is to change one training knob, rerun the small model, and interpret whether validation accuracy moved in a meaningful direction.
 """
         ),
+        md(
+            r"""
+### Section Bootstrap: Load The Crop Dataset
+
+Start this section by loading the classification paths and printing the split/class counts. If you skipped here from above, this bootstrap cell also restores the common setup variables.
+"""
+        ),
         code(
             section_bootstrap + r"""
 # Section bootstrap: classification
@@ -706,6 +741,13 @@ CLASSIFY_ROOT = CLASSIFY_PATHS["root"]
 CACHED_CLASSIFY_RESULTS = BUNDLE_ROOT / "cached_training" / "classification" / "results.csv"
 
 print(json.dumps(summarize_classification_dataset(CLASSIFY_ROOT), indent=2))
+"""
+        ),
+        md(
+            r"""
+### Inspect The Classification Inputs
+
+Before training, look at one crop from each coarse class. These are the actual inputs for the classifier: one cropped image, one truth label.
 """
         ),
         code(
@@ -745,6 +787,15 @@ def softmax_cross_entropy_from_logits(logits, true_class):
 example_logits = [1.2, -0.4, 0.7, 2.1, 0.0]
 print("loss if the true class is index 3:", softmax_cross_entropy_from_logits(example_logits, 3))
 print("loss if the true class is index 1:", softmax_cross_entropy_from_logits(example_logits, 1))
+"""
+        ),
+        md(
+            r"""
+### Train Or Load A Small Classification Run
+
+Now move from the hand-computed loss to an actual model. This cell trains `yolo11n-cls.pt` when a GPU is available. If not, it loads the cached classification curve so the interpretation exercise still works.
+
+Focus on the training arguments: `epochs`, `imgsz`, `batch`, and `lr0`. Those are the knobs you will modify in the exercises.
 """
         ),
         code(
@@ -825,6 +876,13 @@ else:
     print("Learning-rate lab is ready.")
     print("Set RUN_CLASSIFICATION_LR_LAB = True on a GPU to run these trials live.")
     print("Suggested lr0 values:", LR_VALUES)
+"""
+        ),
+        md(
+            r"""
+### Confusion Matrix Reading Practice
+
+The next cell uses a small discussion matrix rather than requiring live predictions. Read it row by row: each row is a true class, and each column is the predicted class. The goal is to connect metric summaries to specific biological or visual confusions.
 """
         ),
         code(
@@ -977,6 +1035,13 @@ for threshold in [0.25, 0.5, 0.8]:
     print(f"conf >= {threshold}:", {key: summary[key] for key in ["tp", "fp", "fn", "precision", "recall"]})
 """
         ),
+        md(
+            r"""
+### Section Bootstrap: Load The Detection Dataset
+
+The toy example above shows the metric logic. Now switch to the real YOLO detection dataset. This bootstrap cell loads the dataset YAML, validates image/label pairing, and defines the cached result path used when live training is unavailable.
+"""
+        ),
         code(
             section_bootstrap + r"""
 # Section bootstrap: detection
@@ -1023,6 +1088,15 @@ print(f"Showing {DETECT_EXAMPLE_STEM}: {detect_example['instance_count']} truth 
 ax = draw_yolo_boxes(first_detect_image, first_detect_label, class_names={0: "object"})
 ax.set_title(f"Detection truth labels: {detect_example['instance_count']} objects")
 plt.show()
+"""
+        ),
+        md(
+            r"""
+### Train Or Load A Small Detection Run
+
+Now we train a binary object detector. The model starts from `yolo11n.pt`, an Ultralytics YOLO detection checkpoint, and the dataset comes from `DETECT_YAML`.
+
+If a GPU is available, this cell runs a short fine-tuning job. Otherwise, it loads a cached training curve. Either way, the output you should inspect is the same: precision, recall, `mAP50`, and `mAP50-95`.
 """
         ),
         code(
@@ -1178,10 +1252,16 @@ This is an advanced path because the checkpoint is larger than `yolo11n.pt`, and
 Useful references:
 
 - FathomNet Megalodon model card: https://huggingface.co/FathomNet/megalodon
+- Hugging Face Hub download docs: https://huggingface.co/docs/huggingface_hub/guides/download
 - Ultralytics prediction mode: https://docs.ultralytics.com/modes/predict/
 - Ultralytics training and fine-tuning mode: https://docs.ultralytics.com/modes/train/
 
-The code below is intentionally close to the documentation pattern: download weights, load `YOLO(weights)`, run `predict`, then optionally run `train`.
+You will not get the full solution here. The cells below give constants, checks, and hints. Your job is to use the documentation to fill in the missing pieces:
+
+1. download the checkpoint from Hugging Face;
+2. load it as a YOLO model;
+3. run prediction on `first_detect_image`;
+4. optionally fine-tune it on `DETECT_YAML`.
 """
         ),
         code(
@@ -1193,50 +1273,47 @@ MEGALODON_FILENAME = "mbari-megalodon-yolov8x.pt"
 MEGALODON_MODEL_PATH = None
 
 if RUN_MEGALODON_ADVANCED:
-    from huggingface_hub import hf_hub_download
-
-    # This public checkpoint is about 137 MB. Hugging Face caches downloads, so
-    # rerunning the cell should not re-download the file unless the cache is cleared.
-    MEGALODON_MODEL_PATH = Path(
-        hf_hub_download(
-            repo_id=MEGALODON_REPO_ID,
-            filename=MEGALODON_FILENAME,
-            cache_dir=REPO_ROOT / ".cache" / "huggingface",
-        )
-    )
-    print(f"Megalodon weights: {MEGALODON_MODEL_PATH}")
+    # TODO:
+    # 1. Import the Hugging Face download helper.
+    # 2. Download `MEGALODON_FILENAME` from `MEGALODON_REPO_ID`.
+    # 3. Store the returned local path in `MEGALODON_MODEL_PATH`.
+    #
+    # Hints:
+    # - The helper is called `hf_hub_download`.
+    # - Use `cache_dir=REPO_ROOT / ".cache" / "huggingface"` if you want the
+    #   checkpoint to stay inside the tutorial repo.
+    print("TODO: download the Megalodon checkpoint and set MEGALODON_MODEL_PATH.")
 else:
     print("Advanced Megalodon path is off by default.")
     print("Set RUN_MEGALODON_ADVANCED = True to download the FathomNet checkpoint.")
 """
         ),
+        md(
+            r"""
+#### Prediction Task
+
+After the checkpoint path exists, use the Ultralytics prediction documentation to run Megalodon on `first_detect_image`. Compare the predicted boxes with the ground-truth boxes from the earlier detection-truth cell.
+"""
+        ),
         code(
             r"""
-if RUN_MEGALODON_ADVANCED and MEGALODON_MODEL_PATH is not None:
-    from ultralytics import YOLO
-    import matplotlib.pyplot as plt
+RUN_MEGALODON_PREDICT = False
 
-    megalodon_model = YOLO(str(MEGALODON_MODEL_PATH))
-    megalodon_prediction = megalodon_model.predict(
-        source=str(first_detect_image),
-        imgsz=640,
-        conf=0.25,
-        save=False,
-        project=REPO_ROOT / "runs" / "megalodon",
-        name="predict_before_finetune",
-        exist_ok=True,
-        verbose=False,
-    )[0]
-
-    plt.figure(figsize=(8, 5))
-    plt.imshow(megalodon_prediction.plot()[..., ::-1])
-    plt.axis("off")
-    plt.title("Megalodon prediction before fine-tuning")
-    plt.show()
-
-    print("Compare this prediction with the green ground-truth boxes above.")
+if RUN_MEGALODON_PREDICT and MEGALODON_MODEL_PATH is not None:
+    # TODO:
+    # 1. Import YOLO from ultralytics.
+    # 2. Load `MEGALODON_MODEL_PATH`.
+    # 3. Run `.predict(...)` on `first_detect_image`.
+    # 4. Plot the first result with `result.plot()`.
+    #
+    # Hints:
+    # - Start with the Ultralytics prediction docs.
+    # - Use a moderate image size first, for example `imgsz=640`.
+    # - Compare the output with the truth boxes shown above.
+    print("TODO: load Megalodon with YOLO(...) and run prediction.")
 else:
-    print("Prediction cell ready. Turn on RUN_MEGALODON_ADVANCED first.")
+    print("Prediction exercise ready.")
+    print("Set RUN_MEGALODON_PREDICT = True after you have downloaded the checkpoint.")
 """
         ),
         md(
@@ -1257,32 +1334,18 @@ Before running the cell, read the Ultralytics training examples and identify:
 RUN_MEGALODON_FINE_TUNE = False
 
 if RUN_MEGALODON_ADVANCED and RUN_MEGALODON_FINE_TUNE and RUN_LIVE_TRAINING and MEGALODON_MODEL_PATH is not None:
-    from ultralytics import YOLO
-
-    megalodon_finetune_args = build_train_args(
-        epochs=2,
-        imgsz=640,
-        batch=2,
-        lr0=0.0005,
-        patience=5,
-        project=REPO_ROOT / "runs" / "megalodon",
-        name="finetune_tutorial_binary",
-    )
-
-    megalodon_finetune_model = YOLO(str(MEGALODON_MODEL_PATH))
-    megalodon_finetune_result = megalodon_finetune_model.train(
-        data=str(DETECT_YAML),
-        **megalodon_finetune_args,
-    )
-    megalodon_finetune_save_dir = (
-        getattr(megalodon_finetune_result, "save_dir", None)
-        or getattr(megalodon_finetune_model.trainer, "save_dir", None)
-    )
-    plot_training_curves(
-        Path(megalodon_finetune_save_dir) / "results.csv",
-        metric_columns=["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"],
-        title="Megalodon fine-tuning metrics",
-    )
+    # TODO:
+    # 1. Build a small training-argument dictionary.
+    # 2. Load the Megalodon checkpoint with YOLO(...).
+    # 3. Call `.train(data=str(DETECT_YAML), ...)`.
+    # 4. Plot the resulting `results.csv` with `plot_training_curves`.
+    #
+    # Hints:
+    # - Keep this small at first: 1-2 epochs, batch 1-2, and a small `lr0`.
+    # - The checkpoint is larger than YOLO11n, so memory is the limiting resource.
+    # - Use the generic detection training cell above as a pattern, but do not
+    #   copy it blindly; check each argument against the Ultralytics docs.
+    print("TODO: fine-tune Megalodon on DETECT_YAML and plot the metrics.")
 else:
     print("Fine-tuning scaffold is ready.")
     print("Set RUN_MEGALODON_ADVANCED = True, RUN_MEGALODON_FINE_TUNE = True, and use a GPU.")
@@ -1424,6 +1487,13 @@ class x1 y1 x2 y2 ... xn yn
 where polygon coordinates are normalized to `[0,1]`.
 """
         ),
+        md(
+            r"""
+### Section Bootstrap: Load The Segmentation Dataset
+
+Start the segmentation section by loading the YOLO segmentation YAML and validating its labels. This is the same pattern as detection, but each label row now stores a polygon instead of a rectangle.
+"""
+        ),
         code(
             section_bootstrap + r"""
 # Section bootstrap: segmentation
@@ -1500,6 +1570,13 @@ def mask_iou(mask_a, mask_b):
 mask_a = [[1, 1, 0], [0, 1, 0], [0, 0, 0]]
 mask_b = [[1, 0, 0], [0, 1, 1], [0, 0, 0]]
 print("mask IoU:", mask_iou(mask_a, mask_b))
+"""
+        ),
+        md(
+            r"""
+### Train Or Load A Small Segmentation Run
+
+Now train the segmentation model, or load cached curves if live training is unavailable. The important difference from detection is that the report contains both box metrics and mask metrics. Compare them: a model can learn reasonable boxes before it learns precise masks.
 """
         ),
         code(
@@ -1631,6 +1708,13 @@ That changes the main question from "how do you train a new supervised head?" to
 The default path below uses cached SAM3-like outputs so everyone can complete the lab. If your runtime passes the live SAM3 checks and you have checkpoint access, set `USE_LIVE_SAM3 = True`.
 """
         ),
+        md(
+            r"""
+### Section Bootstrap: Load SAM3 Cache And Runtime Checks
+
+This cell checks whether live SAM3 is possible and lists the cached prompt outputs available in the tutorial bundle. The rest of the section works even when live SAM3 is unavailable.
+"""
+        ),
         code(
             section_bootstrap + r"""
 # Section bootstrap: SAM3
@@ -1689,6 +1773,13 @@ plot_sam3_result(
     score_threshold=CONFIDENCE_THRESHOLD,
     title=f"{SAM3_IMAGE_ID}: {PROMPT}",
 )
+"""
+        ),
+        md(
+            r"""
+### Compare Several Prompts
+
+After one prompt works, try several prompts on the same cached image. This cell does not train anything; it only changes the text query and reports how many masks were returned for each concept.
 """
         ),
         code(
