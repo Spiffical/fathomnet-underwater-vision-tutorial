@@ -73,13 +73,11 @@ if "BUNDLE_ROOT" not in globals():
 
 if "RUN_LIVE_TRAINING" not in globals():
     RUN_LIVE_TRAINING = bool(detect_runtime().get("has_cuda", False))
-if "SMOKE_EPOCHS" not in globals():
-    SMOKE_EPOCHS = 1
 
 if "build_train_args" not in globals():
     def build_train_args(
         *,
-        epochs=1,
+        n_epochs=10,
         imgsz=320,
         batch=8,
         lr0=0.001,
@@ -92,7 +90,7 @@ if "build_train_args" not in globals():
         '''Compact fallback copy of the visible helper from the setup section.'''
 
         return {
-            "epochs": int(epochs),
+            "epochs": int(n_epochs),
             "imgsz": int(imgsz),
             "batch": int(batch),
             "lr0": float(lr0),
@@ -101,6 +99,7 @@ if "build_train_args" not in globals():
             "project": str(project),
             "name": str(name),
             "seed": int(seed),
+            "save": True,
             "verbose": False,
         }
 
@@ -261,7 +260,6 @@ LOCAL_BUNDLE_ZIP = REPO_ROOT / "data" / "fathomnet_underwater_tutorial_bundle.zi
 IN_COLAB = "google.colab" in sys.modules
 INSTALL_DEPENDENCIES = IN_COLAB
 RUN_LIVE_TRAINING = False  # updated after the runtime check
-SMOKE_EPOCHS = 1
 
 ensure_dependencies(install=INSTALL_DEPENDENCIES, extra_pip_args=("--quiet",))
 RUNTIME = print_runtime_summary(detect_runtime())
@@ -288,6 +286,25 @@ BUNDLE_ROOT = download_tutorial_bundle(
 
 print(f"Bundle root: {BUNDLE_ROOT}")
 print((BUNDLE_ROOT / "manifest.json").read_text()[:1200])
+"""
+        ),
+        md(
+            r"""
+### Train, Validation, And Test Splits
+
+Most supervised machine-learning workflows keep separate data splits:
+
+- **Training set:** examples used to update the model parameters by gradient descent.
+- **Validation set:** examples used during development to choose hyperparameters, compare runs, tune thresholds, and select the best checkpoint.
+- **Test set:** examples held back until the end for a final estimate of performance on data you did not optimize against.
+
+In symbols, training chooses parameters
+
+$$\hat{\theta}=\arg\min_\theta \frac{1}{n_{\mathrm{train}}}\sum_{i\in \mathrm{train}}\ell(f_\theta(x_i),y_i),$$
+
+while validation estimates whether those parameters are useful away from the data that supplied the gradients. Ultralytics saves `weights/best.pt` as the checkpoint that performs best on the validation set during training. That is usually the checkpoint you evaluate or fine-tune from next, while `weights/last.pt` is simply the final epoch.
+
+This compact tutorial bundle uses train/validation splits for live exercises. In a real project, keep a separate test split untouched until your modeling choices are fixed.
 """
         ),
         md(
@@ -333,7 +350,7 @@ You are encouraged to edit this function. It is deliberately small: the goal is 
             r"""
 def build_train_args(
     *,
-    epochs=1,
+    n_epochs=10,
     imgsz=320,
     batch=8,
     lr0=0.001,
@@ -350,12 +367,15 @@ def build_train_args(
         theta_{t+1} = theta_t - eta * grad L(theta_t)
 
     where `lr0` controls the initial step size eta, `batch` controls how noisy
-    the gradient estimate is, and `epochs` controls how many passes you make
+    the gradient estimate is, and `n_epochs` controls how many passes you make
     through the finite training sample.
+
+    Ultralytics expects this argument to be named `epochs`, so the returned
+    dictionary maps the classroom-facing `n_epochs` name to `epochs`.
     '''
 
     return {
-        "epochs": int(epochs),
+        "epochs": int(n_epochs),
         "imgsz": int(imgsz),
         "batch": int(batch),
         "lr0": float(lr0),
@@ -364,6 +384,9 @@ def build_train_args(
         "project": str(project),
         "name": str(name),
         "seed": int(seed),
+        # Keep checkpoint saving explicit. Ultralytics writes weights/best.pt
+        # for the validation-best checkpoint and weights/last.pt for the final epoch.
+        "save": True,
         "verbose": False,
     }
 """
@@ -795,18 +818,19 @@ print("loss if the true class is index 1:", softmax_cross_entropy_from_logits(ex
 
 Now move from the hand-computed loss to an actual model. This cell trains `yolo11n-cls.pt` when a GPU is available. If not, it loads the cached classification curve so the interpretation exercise still works.
 
-Focus on the training arguments: `epochs`, `imgsz`, `batch`, and `lr0`. Those are the knobs you will modify in the exercises.
+Focus on the training arguments: `n_epochs`, `imgsz`, `batch`, and `lr0`. Those are the knobs you will modify in the exercises. When live training runs, Ultralytics saves the validation-best checkpoint at `weights/best.pt`.
 """
         ),
         code(
             r"""
+CLASSIFY_N_EPOCHS = 10
 CLASSIFY_ARGS = build_train_args(
-    epochs=SMOKE_EPOCHS,
+    n_epochs=CLASSIFY_N_EPOCHS,
     imgsz=224,
     batch=16,
     lr0=0.001,
     project=REPO_ROOT / "runs" / "classification",
-    name="classification_smoke",
+    name="classification_default",
 )
 
 # Documentation checkpoint:
@@ -817,6 +841,7 @@ CLASSIFY_ARGS = build_train_args(
 # Your live exercise is to modify the model name or train arguments below.
 classification_training = None
 classification_save_dir = None
+classification_best_model_path = None
 if RUN_LIVE_TRAINING:
     from ultralytics import YOLO
 
@@ -826,6 +851,10 @@ if RUN_LIVE_TRAINING:
     if classification_save_dir is None and getattr(classification_model, "trainer", None) is not None:
         classification_save_dir = getattr(classification_model.trainer, "save_dir", None)
     print("Live classification training finished.")
+    candidate_best = Path(classification_save_dir) / "weights" / "best.pt" if classification_save_dir is not None else None
+    if candidate_best is not None and candidate_best.exists():
+        classification_best_model_path = candidate_best
+        print(f"Best validation checkpoint: {classification_best_model_path}")
 else:
     print("No GPU detected. Using cached classification training curve.")
 
@@ -865,7 +894,7 @@ if RUN_CLASSIFICATION_LR_LAB and RUN_LIVE_TRAINING:
             build_train_args,
             lr0=lr0,
             repo_root=REPO_ROOT,
-            epochs=1,
+            n_epochs=1,
         )
         for lr0 in LR_VALUES
     ]
@@ -906,7 +935,7 @@ plot_confusion_matrix(toy_confusion, classes, normalize=True, title="Discussion 
 
 Beginner:
 
-- Change `epochs` from `1` to `2`.
+- Change `CLASSIFY_N_EPOCHS` from `10` to another value, then rerun the training cell.
 - Run or reason through one learning-rate trial.
 - Decide whether the validation curve is improving, noisy, or overfitting.
 
@@ -1096,18 +1125,19 @@ plt.show()
 
 Now we train a binary object detector. The model starts from `yolo11n.pt`, an Ultralytics YOLO detection checkpoint, and the dataset comes from `DETECT_YAML`.
 
-If a GPU is available, this cell runs a short fine-tuning job. Otherwise, it loads a cached training curve. Either way, the output you should inspect is the same: precision, recall, `mAP50`, and `mAP50-95`.
+If a GPU is available, this cell runs a short fine-tuning job. Otherwise, it loads a cached training curve. Either way, the output you should inspect is the same: precision, recall, `mAP50`, and `mAP50-95`. For a live run, the best validation checkpoint is saved as `weights/best.pt`.
 """
         ),
         code(
             r"""
+DETECT_N_EPOCHS = 10
 DETECT_ARGS = build_train_args(
-    epochs=SMOKE_EPOCHS,
+    n_epochs=DETECT_N_EPOCHS,
     imgsz=320,
     batch=8,
     lr0=0.001,
     project=REPO_ROOT / "runs" / "detect",
-    name="detect_smoke",
+    name="detect_default",
 )
 
 # Documentation checkpoint:
@@ -1119,6 +1149,7 @@ DETECT_ARGS = build_train_args(
 # It uses direct Ultralytics code rather than a tutorial utility wrapper.
 detection_training = None
 detection_save_dir = None
+detection_best_model_path = None
 if RUN_LIVE_TRAINING:
     from ultralytics import YOLO
 
@@ -1128,6 +1159,10 @@ if RUN_LIVE_TRAINING:
     if detection_save_dir is None and getattr(detection_model, "trainer", None) is not None:
         detection_save_dir = getattr(detection_model.trainer, "save_dir", None)
     print("Live detection training finished.")
+    candidate_best = Path(detection_save_dir) / "weights" / "best.pt" if detection_save_dir is not None else None
+    if candidate_best is not None and candidate_best.exists():
+        detection_best_model_path = candidate_best
+        print(f"Best validation checkpoint: {detection_best_model_path}")
 else:
     print("No GPU detected. Using cached detection training curve.")
 
@@ -1168,8 +1203,8 @@ try:
     import matplotlib.pyplot as plt
 
     threshold_weights = (
-        Path(detection_save_dir) / "weights" / "best.pt"
-        if detection_save_dir is not None and (Path(detection_save_dir) / "weights" / "best.pt").exists()
+        detection_best_model_path
+        if detection_best_model_path is not None and detection_best_model_path.exists()
         else "yolo11n.pt"
     )
     threshold_model = YOLO(str(threshold_weights))
@@ -1217,8 +1252,9 @@ print(f"Tiny overfit dataset: {tiny_detect_yaml}")
 if RUN_TINY_OVERFIT_LAB and RUN_LIVE_TRAINING:
     from ultralytics import YOLO
 
+    TINY_OVERFIT_N_EPOCHS = 10
     tiny_args = build_train_args(
-        epochs=12,
+        n_epochs=TINY_OVERFIT_N_EPOCHS,
         imgsz=320,
         batch=4,
         lr0=0.003,
@@ -1229,6 +1265,9 @@ if RUN_TINY_OVERFIT_LAB and RUN_LIVE_TRAINING:
     tiny_model = YOLO("yolo11n.pt")
     tiny_result = tiny_model.train(data=str(tiny_detect_yaml), **tiny_args)
     tiny_save_dir = getattr(tiny_result, "save_dir", None) or getattr(tiny_model.trainer, "save_dir", None)
+    tiny_best_model_path = Path(tiny_save_dir) / "weights" / "best.pt"
+    if tiny_best_model_path.exists():
+        print(f"Best validation checkpoint: {tiny_best_model_path}")
     plot_training_curves(
         Path(tiny_save_dir) / "results.csv",
         metric_columns=["train/box_loss", "val/box_loss", "metrics/mAP50(B)"],
@@ -1341,7 +1380,7 @@ if RUN_MEGALODON_ADVANCED and RUN_MEGALODON_FINE_TUNE and RUN_LIVE_TRAINING and 
     # 4. Plot the resulting `results.csv` with `plot_training_curves`.
     #
     # Hints:
-    # - Keep this small at first: 1-2 epochs, batch 1-2, and a small `lr0`.
+    # - Keep this small at first: a modest `n_epochs`, batch 1-2, and a small `lr0`.
     # - The checkpoint is larger than YOLO11n, so memory is the limiting resource.
     # - Use the generic detection training cell above as a pattern, but do not
     #   copy it blindly; check each argument against the Ultralytics docs.
@@ -1447,7 +1486,7 @@ Beginner:
 Intermediate:
 
 - Change `imgsz` from `320` to `416`.
-- Change `epochs`, `lr0`, or `batch`, then compare `mAP50` and recall.
+- Change `DETECT_N_EPOCHS`, `lr0`, or `batch`, then compare `mAP50` and recall.
 - Complete `coco_bbox_to_yolo_exercise(...)` above.
 - Use the error taxonomy on two predicted images.
 
@@ -1576,18 +1615,19 @@ print("mask IoU:", mask_iou(mask_a, mask_b))
             r"""
 ### Train Or Load A Small Segmentation Run
 
-Now train the segmentation model, or load cached curves if live training is unavailable. The important difference from detection is that the report contains both box metrics and mask metrics. Compare them: a model can learn reasonable boxes before it learns precise masks.
+Now train the segmentation model, or load cached curves if live training is unavailable. The important difference from detection is that the report contains both box metrics and mask metrics. Compare them: a model can learn reasonable boxes before it learns precise masks. For a live run, the best validation checkpoint is saved as `weights/best.pt`.
 """
         ),
         code(
             r"""
+SEGMENT_N_EPOCHS = 10
 SEGMENT_ARGS = build_train_args(
-    epochs=SMOKE_EPOCHS,
+    n_epochs=SEGMENT_N_EPOCHS,
     imgsz=320,
     batch=4,
     lr0=0.001,
     project=REPO_ROOT / "runs" / "segment",
-    name="segment_smoke",
+    name="segment_default",
 )
 
 # Documentation checkpoint:
@@ -1599,6 +1639,7 @@ SEGMENT_ARGS = build_train_args(
 # segmentation model and then interpret both box mAP and mask mAP.
 segmentation_training = None
 segmentation_save_dir = None
+segmentation_best_model_path = None
 if RUN_LIVE_TRAINING:
     from ultralytics import YOLO
 
@@ -1608,6 +1649,10 @@ if RUN_LIVE_TRAINING:
     if segmentation_save_dir is None and getattr(segmentation_model, "trainer", None) is not None:
         segmentation_save_dir = getattr(segmentation_model.trainer, "save_dir", None)
     print("Live segmentation training finished.")
+    candidate_best = Path(segmentation_save_dir) / "weights" / "best.pt" if segmentation_save_dir is not None else None
+    if candidate_best is not None and candidate_best.exists():
+        segmentation_best_model_path = candidate_best
+        print(f"Best validation checkpoint: {segmentation_best_model_path}")
 else:
     print("No GPU detected. Using cached segmentation training curve.")
 

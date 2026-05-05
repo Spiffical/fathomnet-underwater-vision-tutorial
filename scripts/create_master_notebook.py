@@ -326,7 +326,7 @@ For a three-hour live session, a reasonable pacing target is:
 
 - This should be framed as an advanced optional path. The checkpoint is much larger than `yolo11n.pt`, and YOLOv8x fine-tuning can be slow on small GPUs.
 - The useful comparison is not only metric-vs-metric. Ask whether Megalodon finds underwater object-like regions that generic COCO weights miss.
-- Keep `epochs` low at first. The first fine-tuning question is whether the run is wired correctly and whether early validation behavior looks plausible.
+- Keep `n_epochs` modest at first. The first fine-tuning question is whether the run is wired correctly and whether early validation behavior looks plausible.
 - Because Megalodon is already a one-class FathomNet detector, it is a good match for the tutorial's binary `object` labels.
 - The participant notebook intentionally gives hints rather than complete code here. For a quick solution, use `hf_hub_download(...)`, then `YOLO(str(path)).predict(...)`, then `YOLO(str(path)).train(data=str(DETECT_YAML), ...)`.
 """
@@ -356,7 +356,7 @@ For a three-hour live session, a reasonable pacing target is:
 ### Master Notes: Classification
 
 - The direct Ultralytics pattern is `from ultralytics import YOLO`, `model = YOLO("yolo11n-cls.pt")`, then `model.train(data=str(CLASSIFY_ROOT), ...)`.
-- Increasing `epochs` should usually improve the tiny validation run at first, but the curve can be noisy because the validation set is intentionally small.
+- Increasing `n_epochs` should usually improve the tiny validation run at first, but the curve can be noisy because the validation set is intentionally small.
 - Increasing `lr0` by `10x` may converge faster or destabilize; decreasing it by `10x` may make one or two epochs look almost unchanged.
 - In the toy confusion matrix, `gelatinous` and `sponge_coral` are mutually confusable, and `crustacean` can leak into `fish`. Good discussion targets are transparency, partial views, posture, and texture.
 """

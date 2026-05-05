@@ -76,7 +76,7 @@ def run_classification_lr_trial(
     *,
     lr0: float,
     repo_root: str | Path,
-    epochs: int = 1,
+    n_epochs: int = 1,
     imgsz: int = 224,
     model_name: str = "yolo11n-cls.pt",
 ) -> dict[str, object]:
@@ -88,7 +88,7 @@ def run_classification_lr_trial(
 
     model = _load_yolo(model_name)
     args = train_args_builder(
-        epochs=epochs,
+        n_epochs=n_epochs,
         imgsz=imgsz,
         batch=16,
         lr0=lr0,
