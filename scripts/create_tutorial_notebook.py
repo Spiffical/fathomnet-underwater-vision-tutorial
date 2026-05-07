@@ -21,91 +21,13 @@ def code(source: str) -> dict:
 
 
 def build_notebook() -> dict:
-    section_bootstrap = r"""
-# Common skip-ahead bootstrap. This block lets a section run even if you did
-# not execute the setup cells above.
-from pathlib import Path
-import json
-import subprocess
-import sys
+    def section_bootstrap(section: str) -> str:
+        return f"""
+from scripts.tutorial_setup import bootstrap_section
 
-GITHUB_REPO_URL = "https://github.com/Spiffical/fathomnet-underwater-vision-tutorial"
-GITHUB_BRANCH = "main"
-PROJECT_DIR_NAME = "fathomnet_underwater_vision_tutorial"
-BUNDLE_URL = "https://github.com/Spiffical/fathomnet-underwater-vision-tutorial/raw/main/data/fathomnet_underwater_tutorial_bundle.zip"
-
-if "REPO_ROOT" not in globals():
-    def _candidate_roots():
-        cwd = Path.cwd().resolve()
-        yield cwd
-        yield from cwd.parents
-        yield Path("/content") / PROJECT_DIR_NAME
-
-    REPO_ROOT = None
-    for candidate in _candidate_roots():
-        if (candidate / "scripts").exists() and (candidate / "notebooks").exists():
-            REPO_ROOT = candidate
-            break
-    if REPO_ROOT is None and "google.colab" in sys.modules:
-        clone_dir = Path("/content") / PROJECT_DIR_NAME
-        if not clone_dir.exists():
-            subprocess.check_call(["git", "clone", "--depth", "1", "--branch", GITHUB_BRANCH, f"{GITHUB_REPO_URL}.git", str(clone_dir)])
-        REPO_ROOT = clone_dir
-    if REPO_ROOT is None:
-        raise RuntimeError("Could not find the tutorial repo root. Start Jupyter from the cloned repo.")
-
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from scripts.tutorial_setup import detect_runtime, download_tutorial_bundle, ensure_dependencies
-
-if "LOCAL_BUNDLE_ZIP" not in globals():
-    LOCAL_BUNDLE_ZIP = REPO_ROOT / "data" / "fathomnet_underwater_tutorial_bundle.zip"
-
-ensure_dependencies(install=("google.colab" in sys.modules), extra_pip_args=("--quiet",))
-
-if "BUNDLE_ROOT" not in globals():
-    BUNDLE_ROOT = download_tutorial_bundle(
-        bundle_url=BUNDLE_URL or None,
-        bundle_zip_path=LOCAL_BUNDLE_ZIP if LOCAL_BUNDLE_ZIP.exists() else None,
-        output_dir=REPO_ROOT / "data" / "fathomnet_underwater_tutorial_bundle",
-    )
-
-if "RUN_LIVE_TRAINING" not in globals():
-    RUN_LIVE_TRAINING = bool(detect_runtime().get("has_cuda", False))
-
-if "build_train_args" not in globals():
-    def build_train_args(
-        *,
-        n_epochs=10,
-        imgsz=320,
-        batch=8,
-        lr0=0.001,
-        optimizer="AdamW",
-        patience=3,
-        workers=0,
-        project="runs/tutorial",
-        name="experiment",
-        seed=42,
-    ):
-        '''Compact fallback copy of the visible helper from the setup section.'''
-
-        return {
-            "epochs": int(n_epochs),
-            "imgsz": int(imgsz),
-            "batch": int(batch),
-            "lr0": float(lr0),
-            "optimizer": str(optimizer),
-            "patience": int(patience),
-            "workers": int(workers),
-            "project": str(project),
-            "name": str(name),
-            "seed": int(seed),
-            "save": True,
-            "verbose": False,
-        }
-
+bootstrap_section({section!r}, globals())
 """
+
     cells = [
         md(
             r"""
@@ -292,25 +214,6 @@ print((BUNDLE_ROOT / "manifest.json").read_text()[:1200])
         ),
         md(
             r"""
-### Train, Validation, And Test Splits
-
-Most supervised machine-learning workflows keep separate data splits:
-
-- **Training set:** examples used to update the model parameters by gradient descent.
-- **Validation set:** examples used during development to choose hyperparameters, compare runs, tune thresholds, and select the best checkpoint.
-- **Test set:** examples held back until the end for a final estimate of performance on data you did not optimize against.
-
-In symbols, training chooses parameters
-
-$$\hat{\theta}=\arg\min_\theta \frac{1}{n_{\mathrm{train}}}\sum_{i\in \mathrm{train}}\ell(f_\theta(x_i),y_i),$$
-
-while validation estimates whether those parameters are useful away from the data that supplied the gradients. Ultralytics saves `weights/best.pt` as the checkpoint that performs best on the validation set during training. That is usually the checkpoint you evaluate or fine-tune from next, while `weights/last.pt` is simply the final epoch.
-
-This compact tutorial bundle uses train/validation splits for live exercises. In a real project, keep a separate test split untouched until your modeling choices are fixed.
-"""
-        ),
-        md(
-            r"""
 ## First Look At FathomNet Imagery
 
 Before training anything, look at the data. These are full underwater images from the compact FathomNet-derived bundle. Some organisms are obvious, some are tiny, and some are visually ambiguous even for a human.
@@ -343,62 +246,6 @@ show_image_grid(
         ),
         md(
             r"""
-### Visible Helper: Training Arguments
-
-You are encouraged to edit this function. It is deliberately small: the goal is to connect a few knobs to training behavior.
-"""
-        ),
-        code(
-            r"""
-def build_train_args(
-    *,
-    n_epochs=10,
-    imgsz=320,
-    batch=8,
-    lr0=0.001,
-    optimizer="AdamW",
-    patience=3,
-    workers=0,
-    project="runs/tutorial",
-    name="experiment",
-    seed=42,
-):
-    '''Collect the main training hyperparameters in one visible place.
-
-    Think of this as choosing an optimizer trajectory through parameter space:
-
-        theta_{t+1} = theta_t - eta * grad L(theta_t)
-
-    where `lr0` controls the initial step size eta, `batch` controls how noisy
-    the gradient estimate is, and `n_epochs` controls how many passes you make
-    through the finite training sample. The optimizer is explicit so Ultralytics
-    uses the learning rate you choose instead of replacing it with an automatic
-    choice.
-
-    Ultralytics expects this argument to be named `epochs`, so the returned
-    dictionary maps the classroom-facing `n_epochs` name to `epochs`.
-    '''
-
-    return {
-        "epochs": int(n_epochs),
-        "imgsz": int(imgsz),
-        "batch": int(batch),
-        "lr0": float(lr0),
-        "optimizer": str(optimizer),
-        "patience": int(patience),
-        "workers": int(workers),
-        "project": str(project),
-        "name": str(name),
-        "seed": int(seed),
-        # Keep checkpoint saving explicit. Ultralytics writes weights/best.pt
-        # for the validation-best checkpoint and weights/last.pt for the final epoch.
-        "save": True,
-        "verbose": False,
-    }
-"""
-        ),
-        md(
-            r"""
 ## YOLO Warm-Up: Predict Before Training
 
 The official Ultralytics Colab tutorial starts with the shortest useful workflow: install/check the package, run `predict` on a normal image, then move to validation, training, and export. You can open that reference here:
@@ -413,6 +260,8 @@ The official tutorial currently uses newer YOLO model families. This workshop de
         code(
             r"""
 YOLO_WARMUP_SOURCE = "https://ultralytics.com/images/zidane.jpg"
+# `conf` is the confidence threshold: YOLO keeps detections whose score is at
+# least this value. Raising it makes predictions more conservative.
 YOLO_WARMUP_CONF = 0.25
 YOLO_WARMUP_RESULTS = None
 
@@ -807,24 +656,32 @@ The live exercise is to change one training knob, rerun the small model, and int
         ),
         md(
             r"""
+### Train, Validation, And Test Splits
+
+Before training, define the data splits. Most supervised machine-learning workflows keep separate sets:
+
+- **Training set:** examples used to update model parameters by gradient descent.
+- **Validation set:** examples used during development to choose hyperparameters, compare runs, tune thresholds, and select the best checkpoint.
+- **Test set:** examples held back until the end for a final estimate of performance on data you did not optimize against.
+
+In symbols, training chooses parameters
+
+$$\hat{\theta}=\arg\min_\theta \frac{1}{n_{\mathrm{train}}}\sum_{i\in \mathrm{train}}\ell(f_\theta(x_i),y_i),$$
+
+while validation estimates whether those parameters are useful away from the data that supplied the gradients. Ultralytics saves `weights/best.pt` as the checkpoint that performs best on the validation set during training. That is usually the checkpoint you evaluate or fine-tune from next, while `weights/last.pt` is simply the final epoch.
+
+This compact tutorial bundle uses train/validation splits for live exercises. In a real project, keep a separate test split untouched until your modeling choices are fixed.
+"""
+        ),
+        md(
+            r"""
 ### Section Bootstrap: Load The Crop Dataset
 
 Start this section by loading the classification paths and printing the split/class counts. If you skipped here from above, this bootstrap cell also restores the common setup variables.
 """
         ),
         code(
-            section_bootstrap + r"""
-# Section bootstrap: classification
-from scripts.tutorial_data import get_task_paths, summarize_classification_dataset
-from scripts.tutorial_models import run_classification_lr_trial
-from scripts.tutorial_viz import plot_confusion_matrix, plot_training_curves, show_image_grid
-
-CLASSIFY_PATHS = get_task_paths("classification", BUNDLE_ROOT)
-CLASSIFY_ROOT = CLASSIFY_PATHS["root"]
-CACHED_CLASSIFY_RESULTS = BUNDLE_ROOT / "cached_training" / "classification" / "results.csv"
-
-print(json.dumps(summarize_classification_dataset(CLASSIFY_ROOT), indent=2))
-"""
+            section_bootstrap("classification")
         ),
         md(
             r"""
@@ -870,6 +727,62 @@ def softmax_cross_entropy_from_logits(logits, true_class):
 example_logits = [1.2, -0.4, 0.7, 2.1, 0.0]
 print("loss if the true class is index 3:", softmax_cross_entropy_from_logits(example_logits, 3))
 print("loss if the true class is index 1:", softmax_cross_entropy_from_logits(example_logits, 1))
+"""
+        ),
+        md(
+            r"""
+### Visible Helper: Training Arguments
+
+You are encouraged to edit this function before running a training cell. It is deliberately small: the goal is to connect a few knobs to training behavior.
+"""
+        ),
+        code(
+            r"""
+def build_train_args(
+    *,
+    n_epochs=10,
+    imgsz=320,
+    batch=8,
+    lr0=0.001,
+    optimizer="AdamW",
+    patience=3,
+    workers=0,
+    project="runs/tutorial",
+    name="experiment",
+    seed=42,
+):
+    '''Collect the main training hyperparameters in one visible place.
+
+    Think of this as choosing an optimizer trajectory through parameter space:
+
+        theta_{t+1} = theta_t - eta * grad L(theta_t)
+
+    where `lr0` controls the initial step size eta, `batch` controls how noisy
+    the gradient estimate is, and `n_epochs` controls how many passes you make
+    through the finite training sample. The optimizer is explicit so Ultralytics
+    uses the learning rate you choose instead of replacing it with an automatic
+    choice.
+
+    Ultralytics expects this argument to be named `epochs`, so the returned
+    dictionary maps the classroom-facing `n_epochs` name to `epochs`.
+    '''
+
+    return {
+        "epochs": int(n_epochs),
+        "imgsz": int(imgsz),
+        "batch": int(batch),
+        "lr0": float(lr0),
+        "optimizer": str(optimizer),
+        "patience": int(patience),
+        "workers": int(workers),
+        "project": str(project),
+        "name": str(name),
+        "seed": int(seed),
+        # Keep checkpoint saving explicit. Ultralytics writes weights/best.pt
+        # for the validation-best checkpoint and weights/last.pt for the final epoch.
+        "save": True,
+        "verbose": False,
+    }
 """
         ),
         md(
@@ -1187,19 +1100,7 @@ The toy example above shows the metric logic. Now switch to the real YOLO detect
 """
         ),
         code(
-            section_bootstrap + r"""
-# Section bootstrap: detection
-from scripts.tutorial_data import get_task_paths, make_tiny_detection_dataset, select_yolo_examples, validate_yolo_dataset
-from scripts.tutorial_models import prediction_count_at_threshold
-from scripts.tutorial_viz import draw_yolo_boxes, plot_training_curves
-
-DETECT_PATHS = get_task_paths("detect", BUNDLE_ROOT)
-DETECT_ROOT = DETECT_PATHS["root"]
-DETECT_YAML = DETECT_PATHS["yaml"]
-CACHED_DETECT_RESULTS = BUNDLE_ROOT / "cached_training" / "detection" / "results.csv"
-
-print(json.dumps(validate_yolo_dataset(DETECT_YAML, task="detect"), indent=2)[:3000])
-"""
+            section_bootstrap("detection")
         ),
         md(
             r"""
@@ -1649,18 +1550,7 @@ Start the segmentation section by loading the YOLO segmentation YAML and validat
 """
         ),
         code(
-            section_bootstrap + r"""
-# Section bootstrap: segmentation
-from scripts.tutorial_data import get_task_paths, select_yolo_examples, validate_yolo_dataset, yolo_label_instance_count
-from scripts.tutorial_viz import draw_yolo_masks, plot_training_curves
-
-SEGMENT_PATHS = get_task_paths("segment", BUNDLE_ROOT)
-SEGMENT_ROOT = SEGMENT_PATHS["root"]
-SEGMENT_YAML = SEGMENT_PATHS["yaml"]
-CACHED_SEGMENT_RESULTS = BUNDLE_ROOT / "cached_training" / "segmentation" / "results.csv"
-
-print(json.dumps(validate_yolo_dataset(SEGMENT_YAML, task="segment"), indent=2)[:3000])
-"""
+            section_bootstrap("segmentation")
         ),
         md(
             r"""
@@ -1932,22 +1822,7 @@ This cell checks whether live SAM3 is possible and lists the cached prompt outpu
 """
         ),
         code(
-            section_bootstrap + r"""
-# Section bootstrap: SAM3
-from scripts.tutorial_sam3 import (
-    available_cached_prompts,
-    load_cached_sam3_result,
-    run_sam3_text_prompt,
-    sam3_can_run_live,
-)
-from scripts.tutorial_viz import plot_sam3_result
-
-SAM3_STATUS = sam3_can_run_live()
-USE_LIVE_SAM3 = False
-
-print(json.dumps(SAM3_STATUS, indent=2))
-print(json.dumps(available_cached_prompts(BUNDLE_ROOT), indent=2)[:3000])
-"""
+            section_bootstrap("sam3")
         ),
         md(
             r"""
