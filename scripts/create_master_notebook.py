@@ -543,7 +543,7 @@ For a three-hour live session, a reasonable pacing target is:
 ### Master Notes: Dataset Exploration
 
 - Good obvious examples usually have high contrast, a large organism, and a clean background. Subtle examples often involve small objects, partial bodies, or organism-background camouflage.
-- The visual views are intentionally distinct: full images with category labels show "what is present," classification crops show one coarse label per crop, detection labels show multiple boxes per full image, and segmentation labels show multiple object-shaped regions per full image.
+- The visual views are intentionally distinct: full images with category labels show "what is present," classification crops show one source-level concept label per crop, detection labels show multiple boxes per full image, and segmentation labels show multiple object-shaped regions per full image.
 - Keep this section about truth labels only. Save model predictions for the YOLO warm-up and training/evaluation sections.
 - Collapsing many categories into `object` removes biological identity, taxonomy, and ecological meaning, but makes a short detection exercise easier and more stable.
 - Restoring tiny boxes would push the area histogram left, increase the number of labels per image, and likely lower short-run mAP for a small model because localization becomes much harder.
@@ -666,8 +666,8 @@ For a three-hour live session, a reasonable pacing target is:
 
 - The direct Ultralytics pattern is `from ultralytics import YOLO`, `model = YOLO("yolo11n-cls.pt")`, then `model.train(data=str(CLASSIFY_ROOT), ...)`.
 - Increasing `n_epochs` should usually improve the tiny validation run at first, but the curve can be noisy because the validation set is intentionally small.
-- Increasing `lr0` by `10x` may converge faster or destabilize; decreasing it by `10x` may make one or two epochs look almost unchanged.
-- In the toy confusion matrix, `gelatinous` and `sponge_coral` are mutually confusable, and `crustacean` can leak into `fish`. Good discussion targets are transparency, partial views, posture, and texture.
+- In a 5-epoch GPU sweep with this 12-class crop bundle, `lr0=1e-4` reached about `0.61` top-1, `lr0=1e-3` peaked near `0.69` top-1, and `lr0=1e-2` reached about `0.58` top-1. The exact values can move, but the pattern is useful.
+- In the toy confusion matrix, adjacent off-diagonal entries are deliberate. Good discussion targets are visual similarity, partial views, label granularity, and the difference between a true biological ambiguity and a model error.
 """
         ),
     )
@@ -680,7 +680,7 @@ For a three-hour live session, a reasonable pacing target is:
 ### Master Notes: Prediction Confusion Matrix
 
 - Keep this advanced exercise gated until a trained classification checkpoint exists.
-- If a generic ImageNet classifier is used instead of the tutorial-trained checkpoint, predicted class names may not match the five tutorial folders.
+- If a generic ImageNet classifier is used instead of the tutorial-trained checkpoint, predicted class names may not match the tutorial's FathomNet concept folders.
 - The useful teaching point is the mapping from validation folder names to true labels and from model outputs to predicted labels.
 """
         ),

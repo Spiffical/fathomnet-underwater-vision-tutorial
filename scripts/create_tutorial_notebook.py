@@ -81,6 +81,7 @@ if "build_train_args" not in globals():
         imgsz=320,
         batch=8,
         lr0=0.001,
+        optimizer="AdamW",
         patience=3,
         workers=0,
         project="runs/tutorial",
@@ -94,6 +95,7 @@ if "build_train_args" not in globals():
             "imgsz": int(imgsz),
             "batch": int(batch),
             "lr0": float(lr0),
+            "optimizer": str(optimizer),
             "patience": int(patience),
             "workers": int(workers),
             "project": str(project),
@@ -354,6 +356,7 @@ def build_train_args(
     imgsz=320,
     batch=8,
     lr0=0.001,
+    optimizer="AdamW",
     patience=3,
     workers=0,
     project="runs/tutorial",
@@ -368,7 +371,9 @@ def build_train_args(
 
     where `lr0` controls the initial step size eta, `batch` controls how noisy
     the gradient estimate is, and `n_epochs` controls how many passes you make
-    through the finite training sample.
+    through the finite training sample. The optimizer is explicit so Ultralytics
+    uses the learning rate you choose instead of replacing it with an automatic
+    choice.
 
     Ultralytics expects this argument to be named `epochs`, so the returned
     dictionary maps the classroom-facing `n_epochs` name to `epochs`.
@@ -379,6 +384,7 @@ def build_train_args(
         "imgsz": int(imgsz),
         "batch": int(batch),
         "lr0": float(lr0),
+        "optimizer": str(optimizer),
         "patience": int(patience),
         "workers": int(workers),
         "project": str(project),
@@ -475,7 +481,7 @@ You have now seen the images. Next, inspect how the same underlying problem is r
 
 The bundle has four useful views:
 
-- `classification_crops`: organism crops grouped by coarse class.
+- `classification_crops`: organism crops grouped by source-level FathomNet concept label.
 - `yolo_detect_binary`: one-class object detection labels.
 - `yolo_segment_binary`: one-class instance segmentation polygon labels.
 - `sam3_cached_outputs`: SAM3-like prompt outputs for the fallback lab.
@@ -508,7 +514,8 @@ coco_paths = get_task_paths("coco", BUNDLE_ROOT)
 manifest = load_manifest(BUNDLE_ROOT)
 print(json.dumps({
     "name": manifest["name"],
-    "workshop_classes": manifest["workshop_classes"],
+    "classification_classes": manifest.get("classification_classes", []),
+    "classification_source_concepts": manifest.get("classification_source_concepts", {}),
     "stats": manifest["stats"],
 }, indent=2))
 """
@@ -554,7 +561,7 @@ show_image_grid(
             r"""
 ### View 2: Classification Crops With Truth Labels
 
-The training classifier uses organism crops grouped by coarse class. Each crop has one truth label from the folder name. There is still no geometry target here: no center point, no bounding box, no polygon.
+The training classifier uses organism crops grouped by source-level FathomNet concept labels. Each crop has one truth label from the folder name. There is still no geometry target here: no center point, no bounding box, no polygon.
 """
         ),
         code(
@@ -568,8 +575,8 @@ classification_examples = classification_examples_by_class(
 show_image_grid(
     [item["image_path"] for item in classification_examples],
     titles=[item["class_name"] for item in classification_examples],
-    columns=5,
-    max_images=10,
+    columns=4,
+    max_images=12,
 )
 """
         ),
@@ -777,7 +784,7 @@ Advanced:
             r"""
 # Part 1: Classification From Organism Crops
 
-Classification means predicting one label for an input. This is the easiest entry point because each organism crop has one coarse label. It is still not trivial: underwater crops can be low contrast, partially occluded, visually ambiguous, and taxonomically long-tailed.
+Classification means predicting one label for an input. This is the easiest entry point because each organism crop has one label and no geometric target. The crop labels in this bundle are common FathomNet source concepts, so there are enough classes for top-5 accuracy to be meaningful instead of automatically perfect.
 
 Here the image crop is a tensor
 
@@ -823,7 +830,7 @@ print(json.dumps(summarize_classification_dataset(CLASSIFY_ROOT), indent=2))
             r"""
 ### Inspect The Classification Inputs
 
-Before training, look at one crop from each coarse class. These are the actual inputs for the classifier: one cropped image, one truth label.
+Before training, look at one crop from each class. These are the actual inputs for the classifier: one cropped image, one truth label.
 """
         ),
         code(
@@ -836,7 +843,7 @@ for class_dir in sorted((CLASSIFY_ROOT / "train").iterdir()):
         class_examples.append(images[0])
         class_titles.append(class_dir.name)
 
-show_image_grid(class_examples, titles=class_titles, columns=5)
+show_image_grid(class_examples, titles=class_titles, columns=4)
 """
         ),
         md(
@@ -871,7 +878,9 @@ print("loss if the true class is index 1:", softmax_cross_entropy_from_logits(ex
 
 Now move from the hand-computed loss to an actual model. This cell trains `yolo11n-cls.pt` when a GPU is available. If not, it loads the cached classification curve so the interpretation exercise still works.
 
-Focus on the training arguments: `n_epochs`, `imgsz`, `batch`, and `lr0`. Those are the knobs you will modify in the exercises. When live training runs, Ultralytics saves the validation-best checkpoint at `weights/best.pt`.
+Focus on the training arguments: `n_epochs`, `imgsz`, `batch`, `optimizer`, and `lr0`. Those are the knobs you will modify in the exercises. When live training runs, Ultralytics saves the validation-best checkpoint at `weights/best.pt`.
+
+The plot reports top-1 and top-5 accuracy when those columns are available. Top-1 asks whether the highest-probability class is correct. Top-5 asks whether the truth appears anywhere in the five highest-probability classes, which is useful here because the classifier has more than five possible labels.
 """
         ),
         code(
@@ -932,13 +941,14 @@ The learning rate controls the scale of each gradient step. In a small workshop 
 - useful: validation accuracy improves without wild instability;
 - too large: loss or validation accuracy jumps around or degrades.
 
-Try one or more learning rates from `lr0 = 1e-4`, `1e-3`, and `1e-2`. The cached curves give you a baseline comparison, and a live GPU run lets you see how much the result changes from one run to the next.
+Try one or more learning rates from `lr0 = 1e-4`, `1e-3`, and `1e-2`. The default mini-lab uses several epochs because one epoch is often too short to reveal the difference between slow, useful, and unstable optimization. The cached curves give you a baseline comparison, and a live GPU run lets you see how much the result changes from one run to the next.
 """
         ),
         code(
             r"""
 RUN_CLASSIFICATION_LR_LAB = False
 LR_VALUES = [1e-4, 1e-3, 1e-2]
+LR_LAB_N_EPOCHS = 5
 
 if RUN_CLASSIFICATION_LR_LAB and RUN_LIVE_TRAINING:
     lr_rows = [
@@ -947,7 +957,7 @@ if RUN_CLASSIFICATION_LR_LAB and RUN_LIVE_TRAINING:
             build_train_args,
             lr0=lr0,
             repo_root=REPO_ROOT,
-            n_epochs=1,
+            n_epochs=LR_LAB_N_EPOCHS,
         )
         for lr0 in LR_VALUES
     ]
@@ -969,15 +979,16 @@ The next cell uses a small discussion matrix rather than requiring live predicti
         ),
         code(
             r"""
-# A small confusion matrix for discussion. Replace this with predictions from
-# your live run if you want to make the exercise more advanced.
-classes = ["echinoderm", "fish", "gelatinous", "crustacean", "sponge_coral"]
+# A small confusion matrix for discussion. It uses the first few classes in the
+# current bundle so the labels stay synchronized if the data bundle is rebuilt.
+classes = [path.name for path in sorted((CLASSIFY_ROOT / "val").iterdir())[:6] if path.is_dir()]
 toy_confusion = [
-    [8, 0, 1, 0, 1],
-    [0, 6, 1, 1, 0],
-    [1, 0, 7, 0, 2],
-    [0, 2, 0, 5, 1],
-    [1, 0, 2, 0, 8],
+    [7, 1, 0, 0, 0, 0],
+    [1, 5, 1, 0, 0, 0],
+    [0, 1, 6, 1, 0, 0],
+    [0, 0, 1, 5, 1, 0],
+    [0, 0, 0, 1, 6, 1],
+    [1, 0, 0, 0, 1, 5],
 ]
 plot_confusion_matrix(toy_confusion, classes, normalize=True, title="Discussion matrix: normalized by true class")
 """

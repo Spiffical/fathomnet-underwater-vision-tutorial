@@ -76,7 +76,7 @@ def run_classification_lr_trial(
     *,
     lr0: float,
     repo_root: str | Path,
-    n_epochs: int = 1,
+    n_epochs: int = 5,
     imgsz: int = 224,
     model_name: str = "yolo11n-cls.pt",
 ) -> dict[str, object]:

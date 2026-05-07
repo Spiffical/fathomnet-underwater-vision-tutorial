@@ -18,6 +18,7 @@ import csv
 import hashlib
 import json
 import random
+import re
 import shutil
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -37,6 +38,8 @@ SUBSET100 = SOURCE_ROOT / "data" / "subset"
 SUBSET500 = SOURCE_ROOT / "data" / "subset_500"
 LABEL_PLAN = SOURCE_ROOT / "configs" / "label_plans.yaml"
 YOLO_MIN_BOX_AREA = 0.005
+CLASSIFICATION_MAX_CLASSES = 12
+CLASSIFICATION_MIN_PER_CLASS = 20
 
 WORKSHOP_CLASS_MAP = {
     "fish": "fish",
@@ -222,6 +225,13 @@ def load_workshop_class_mapping() -> dict[str, str]:
     return mapping
 
 
+def slugify_class_name(name: str) -> str:
+    """Return a filesystem-friendly class folder name for a FathomNet concept."""
+
+    slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+    return slug or "unnamed_class"
+
+
 def expanded_bbox(bbox: list[float], width: int, height: int, margin_fraction: float = 0.12) -> tuple[int, int, int, int]:
     x, y, box_w, box_h = bbox
     margin = margin_fraction * max(box_w, box_h)
@@ -237,22 +247,29 @@ def build_classification_crops(
     *,
     seed: int,
     max_per_class: int,
+    max_classes: int,
+    min_per_class: int,
     crop_size: int,
     image_quality: int,
 ) -> dict:
-    """Build a balanced ImageFolder dataset from the 500-image subset."""
+    """Build an ImageFolder dataset from common source-level FathomNet concepts.
+
+    Earlier versions collapsed these crops into five broad classes. That made
+    top-5 accuracy mathematically uninformative because every class could fit
+    inside the top five predictions. Here we use common source concepts instead:
+    the classes are still small enough for Colab, but ranking metrics now teach
+    something real.
+    """
 
     rng = random.Random(seed)
     data = load_json(SUBSET500 / "subset.json")
-    concept_to_workshop = load_workshop_class_mapping()
     image_by_id = {image["id"]: image for image in data["images"]}
     category_by_id = {category["id"]: category["name"] for category in data["categories"]}
 
     candidates: dict[str, list[dict]] = defaultdict(list)
     for annotation in data["annotations"]:
         concept = category_by_id.get(annotation["category_id"])
-        workshop_class = concept_to_workshop.get(concept)
-        if workshop_class is None:
+        if concept is None:
             continue
         image_info = image_by_id.get(annotation["image_id"])
         if image_info is None:
@@ -260,7 +277,10 @@ def build_classification_crops(
         source_image = SUBSET500 / "images" / image_info["file_name"]
         if not source_image.exists():
             continue
-        candidates[workshop_class].append(
+        _, _, box_width, box_height = annotation["bbox"]
+        if box_width < 8 or box_height < 8:
+            continue
+        candidates[concept].append(
             {
                 "annotation": annotation,
                 "image": image_info,
@@ -269,13 +289,27 @@ def build_classification_crops(
             }
         )
 
+    eligible = [
+        (concept, rows)
+        for concept, rows in candidates.items()
+        if len(rows) >= min_per_class
+    ]
+    eligible.sort(key=lambda item: (-len(item[1]), item[0].lower()))
+    selected_concepts = eligible[:max_classes]
+    source_concepts_by_class: dict[str, str] = {}
+
     crop_manifest_rows: list[dict] = []
     class_counts: dict[str, dict[str, int]] = {}
-    for class_name, rows in sorted(candidates.items()):
+    for source_concept, rows in selected_concepts:
+        class_name = slugify_class_name(source_concept)
+        if class_name in source_concepts_by_class:
+            class_name = f"{class_name}_{len(source_concepts_by_class)}"
+        source_concepts_by_class[class_name] = source_concept
+
         rng.shuffle(rows)
         selected = rows[:max_per_class]
         split_cut = max(1, int(len(selected) * 0.8))
-        class_counts[class_name] = {"train": 0, "val": 0}
+        class_counts[class_name] = {"train": 0, "val": 0, "available_annotations": len(rows)}
         for index, row in enumerate(selected):
             split = "train" if index < split_cut else "val"
             image_info = row["image"]
@@ -298,7 +332,7 @@ def build_classification_crops(
                     "relative_path": str(relative_path),
                     "split": split,
                     "class_name": class_name,
-                    "source_concept": row["concept"],
+                    "source_concept": source_concept,
                     "source_image": image_info["file_name"],
                     "annotation_id": annotation["id"],
                 }
@@ -321,7 +355,13 @@ def build_classification_crops(
         writer.writeheader()
         writer.writerows(crop_manifest_rows)
 
-    return {"classification_counts": class_counts, "classification_crops": len(crop_manifest_rows)}
+    return {
+        "classification_counts": class_counts,
+        "classification_crops": len(crop_manifest_rows),
+        "classification_source_concepts": source_concepts_by_class,
+        "classification_max_classes": max_classes,
+        "classification_min_per_class": min_per_class,
+    }
 
 
 def polygon_box(polygon: list[list[float]]) -> list[float]:
@@ -429,11 +469,16 @@ def build_cached_training(output_root: Path) -> dict:
     cache_root.mkdir(parents=True, exist_ok=True)
 
     classification_rows = [
-        {"epoch": 1, "train/loss": 1.62, "val/loss": 1.48, "metrics/accuracy_top1": 0.30},
-        {"epoch": 2, "train/loss": 1.31, "val/loss": 1.22, "metrics/accuracy_top1": 0.46},
-        {"epoch": 3, "train/loss": 1.12, "val/loss": 1.06, "metrics/accuracy_top1": 0.55},
-        {"epoch": 4, "train/loss": 0.98, "val/loss": 0.95, "metrics/accuracy_top1": 0.61},
-        {"epoch": 5, "train/loss": 0.87, "val/loss": 0.91, "metrics/accuracy_top1": 0.64},
+        {"epoch": 1, "train/loss": 2.34807, "val/loss": 2.37240, "metrics/accuracy_top1": 0.23944, "metrics/accuracy_top5": 0.59155},
+        {"epoch": 2, "train/loss": 1.72468, "val/loss": 1.74512, "metrics/accuracy_top1": 0.45070, "metrics/accuracy_top5": 0.88732},
+        {"epoch": 3, "train/loss": 1.43959, "val/loss": 1.59505, "metrics/accuracy_top1": 0.53521, "metrics/accuracy_top5": 0.91549},
+        {"epoch": 4, "train/loss": 1.23903, "val/loss": 1.19613, "metrics/accuracy_top1": 0.64789, "metrics/accuracy_top5": 0.90141},
+        {"epoch": 5, "train/loss": 1.09098, "val/loss": 1.30697, "metrics/accuracy_top1": 0.69014, "metrics/accuracy_top5": 0.91549},
+        {"epoch": 6, "train/loss": 0.88288, "val/loss": 0.81433, "metrics/accuracy_top1": 0.69014, "metrics/accuracy_top5": 0.91549},
+        {"epoch": 7, "train/loss": 0.74171, "val/loss": 0.92708, "metrics/accuracy_top1": 0.70423, "metrics/accuracy_top5": 0.94366},
+        {"epoch": 8, "train/loss": 0.74191, "val/loss": 1.02311, "metrics/accuracy_top1": 0.73239, "metrics/accuracy_top5": 0.97183},
+        {"epoch": 9, "train/loss": 0.71847, "val/loss": 0.77734, "metrics/accuracy_top1": 0.76056, "metrics/accuracy_top5": 0.94366},
+        {"epoch": 10, "train/loss": 0.62716, "val/loss": 0.73226, "metrics/accuracy_top1": 0.76056, "metrics/accuracy_top5": 0.92958},
     ]
     classification_dir = cache_root / "classification"
     classification_dir.mkdir(exist_ok=True)
@@ -529,6 +574,8 @@ def write_manifest(output_root: Path, stats: dict) -> None:
             "coco_inspection": "coco/subset.json",
             "sam3_fallback": "sam3_cached_outputs/index.json",
         },
+        "classification_classes": sorted(stats.get("classification_source_concepts", {}).keys()),
+        "classification_source_concepts": stats.get("classification_source_concepts", {}),
         "workshop_classes": sorted(set(WORKSHOP_CLASS_MAP.values())),
         "stats": stats,
     }
@@ -549,6 +596,8 @@ def build_bundle(
     force: bool,
     seed: int,
     max_classification_per_class: int,
+    classification_max_classes: int,
+    classification_min_per_class: int,
     crop_size: int,
     image_quality: int,
 ) -> Path:
@@ -564,6 +613,8 @@ def build_bundle(
         output_root,
         seed=seed,
         max_per_class=max_classification_per_class,
+        max_classes=classification_max_classes,
+        min_per_class=classification_min_per_class,
         crop_size=crop_size,
         image_quality=image_quality,
     ))
@@ -588,7 +639,9 @@ def main() -> None:
     parser.add_argument("--output-root", type=Path, default=Path("data/fathomnet_underwater_tutorial_bundle"))
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--max-classification-per-class", type=int, default=50)
+    parser.add_argument("--max-classification-per-class", type=int, default=30)
+    parser.add_argument("--classification-max-classes", type=int, default=CLASSIFICATION_MAX_CLASSES)
+    parser.add_argument("--classification-min-per-class", type=int, default=CLASSIFICATION_MIN_PER_CLASS)
     parser.add_argument("--crop-size", type=int, default=224)
     parser.add_argument("--image-quality", type=int, default=88)
     args = parser.parse_args()
@@ -598,6 +651,8 @@ def main() -> None:
         force=args.force,
         seed=args.seed,
         max_classification_per_class=args.max_classification_per_class,
+        classification_max_classes=args.classification_max_classes,
+        classification_min_per_class=args.classification_min_per_class,
         crop_size=args.crop_size,
         image_quality=args.image_quality,
     )
