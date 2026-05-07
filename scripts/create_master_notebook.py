@@ -52,6 +52,16 @@ def replace_once(notebook: dict, old: str, new: str) -> None:
     raise ValueError(f"Could not find expected notebook fragment: {old[:80]!r}")
 
 
+def replace_cell_containing(notebook: dict, marker: str, new: str) -> None:
+    """Replace the whole source of the first cell containing `marker`."""
+
+    for cell in notebook["cells"]:
+        if marker in source_text(cell):
+            set_source(cell, new)
+            return
+    raise ValueError(f"Could not find notebook cell containing: {marker!r}")
+
+
 def insert_after_heading(notebook: dict, heading: str, cell: dict) -> None:
     """Insert a cell immediately after the markdown cell containing a heading."""
 
@@ -186,6 +196,291 @@ assert mask_iou([[1, 1]], [[1, 1]]) == 1.0
 ''',
     )
 
+    replace_cell_containing(
+        notebook,
+        "def audit_yolo_split_exercise(dataset_root):",
+        r'''
+def audit_yolo_split_exercise(dataset_root):
+    """Audit leakage and rough distribution shift for a YOLO detection dataset."""
+
+    import statistics
+
+    dataset_root = Path(dataset_root)
+
+    def image_stems(split):
+        image_dir = dataset_root / "images" / split
+        return {
+            path.stem
+            for path in image_dir.glob("*")
+            if path.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+        }
+
+    def label_stats(split):
+        label_dir = dataset_root / "labels" / split
+        instance_count = 0
+        box_areas = []
+        instances_per_image = []
+        for label_path in sorted(label_dir.glob("*.txt")):
+            rows = [line.split() for line in label_path.read_text().splitlines() if line.strip()]
+            instances_per_image.append(len(rows))
+            instance_count += len(rows)
+            for row in rows:
+                if len(row) == 5:
+                    _, _, _, width, height = map(float, row)
+                    box_areas.append(width * height)
+        return {
+            "instances": instance_count,
+            "images_with_label_files": len(instances_per_image),
+            "mean_instances_per_image": sum(instances_per_image) / len(instances_per_image) if instances_per_image else 0.0,
+            "median_box_area": statistics.median(box_areas) if box_areas else None,
+            "min_box_area": min(box_areas) if box_areas else None,
+            "max_box_area": max(box_areas) if box_areas else None,
+        }
+
+    train_stems = image_stems("train")
+    val_stems = image_stems("val")
+    return {
+        "train_images": len(train_stems),
+        "val_images": len(val_stems),
+        "overlapping_image_stems": sorted(train_stems & val_stems),
+        "train": label_stats("train"),
+        "val": label_stats("val"),
+    }
+
+
+split_audit = audit_yolo_split_exercise(detect_paths["root"])
+print(json.dumps(split_audit, indent=2))
+''',
+    )
+
+    replace_cell_containing(
+        notebook,
+        "def build_confusion_matrix_from_predictions(model_or_path, val_root):",
+        r'''
+RUN_CLASSIFICATION_CONFUSION_ADVANCED = False
+
+def build_confusion_matrix_from_predictions(model_or_path, val_root):
+    """Predict validation crops and return `(matrix, class_names)`."""
+
+    from sklearn.metrics import confusion_matrix
+    from ultralytics import YOLO
+
+    val_root = Path(val_root)
+    class_dirs = sorted(path for path in val_root.iterdir() if path.is_dir())
+    class_names = [path.name for path in class_dirs]
+    class_to_index = {name: index for index, name in enumerate(class_names)}
+
+    model = YOLO(str(model_or_path))
+    y_true = []
+    y_pred = []
+
+    for true_index, class_dir in enumerate(class_dirs):
+        for image_path in sorted(class_dir.glob("*")):
+            if image_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}:
+                continue
+            result = model.predict(source=str(image_path), imgsz=224, verbose=False)[0]
+            predicted_index = int(result.probs.top1)
+            predicted_name = result.names.get(predicted_index, str(predicted_index))
+            if predicted_name in class_to_index:
+                predicted_index = class_to_index[predicted_name]
+            if 0 <= predicted_index < len(class_names):
+                y_true.append(true_index)
+                y_pred.append(predicted_index)
+
+    matrix = confusion_matrix(y_true, y_pred, labels=list(range(len(class_names))))
+    return matrix, class_names
+
+
+if RUN_CLASSIFICATION_CONFUSION_ADVANCED:
+    model_path = classification_best_model_path
+    if model_path is None:
+        print("Run live classification training first so `classification_best_model_path` exists.")
+    else:
+        matrix, class_names = build_confusion_matrix_from_predictions(model_path, CLASSIFY_ROOT / "val")
+        plot_confusion_matrix(matrix, class_names, normalize=True, title="Validation confusion matrix")
+else:
+    print("Advanced confusion-matrix exercise is ready.")
+    print("Set RUN_CLASSIFICATION_CONFUSION_ADVANCED = True after implementing the helper.")
+''',
+    )
+
+    replace_cell_containing(
+        notebook,
+        "def yolo_polygon_row_to_mask(row, image_width, image_height):",
+        r'''
+def yolo_polygon_row_to_mask(row, image_width, image_height):
+    """Rasterize one YOLO segmentation polygon row into a binary mask."""
+
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    coords = row[1:]
+    if len(coords) < 6:
+        raise ValueError("A polygon needs at least 3 points.")
+    if len(coords) % 2:
+        raise ValueError("Polygon coordinates must be x/y pairs.")
+
+    points = [
+        (coords[index] * image_width, coords[index + 1] * image_height)
+        for index in range(0, len(coords), 2)
+    ]
+    mask_image = Image.new("L", (int(image_width), int(image_height)), 0)
+    ImageDraw.Draw(mask_image).polygon(points, outline=1, fill=1)
+    return np.asarray(mask_image, dtype=bool)
+
+
+example_segment_row = [float(part) for part in first_segment_label.read_text().splitlines()[0].split()]
+from PIL import Image
+
+with Image.open(first_segment_image) as example_segment_image:
+    example_width, example_height = example_segment_image.size
+
+candidate_mask = yolo_polygon_row_to_mask(example_segment_row, example_width, example_height)
+import numpy as np
+import matplotlib.pyplot as plt
+
+candidate_mask = np.asarray(candidate_mask).astype(bool)
+print("mask shape:", candidate_mask.shape, "mask pixels:", int(candidate_mask.sum()))
+plt.figure(figsize=(6, 4))
+plt.imshow(candidate_mask, cmap="gray")
+plt.axis("off")
+plt.title("Rasterized YOLO polygon")
+plt.show()
+''',
+    )
+
+    replace_cell_containing(
+        notebook,
+        "def sam3_result_to_yolo_pseudo_labels(result, class_id=0, score_threshold=0.5):",
+        r'''
+def sam3_result_to_yolo_pseudo_labels(result, class_id=0, score_threshold=0.5):
+    """Convert SAM3-style polygons into YOLO segmentation pseudo-label rows."""
+
+    rows = []
+    scores = result.get("scores", [])
+    for index, polygon in enumerate(result.get("polygons", [])):
+        score = float(scores[index]) if index < len(scores) else 1.0
+        if score < score_threshold:
+            continue
+        row = [int(class_id)]
+        for x, y in polygon:
+            row.extend([float(x), float(y)])
+        if len(row) >= 7:
+            rows.append(row)
+    return rows
+
+
+pseudo_label_rows = sam3_result_to_yolo_pseudo_labels(
+    sam3_result,
+    class_id=0,
+    score_threshold=CONFIDENCE_THRESHOLD,
+)
+
+print(f"pseudo-label rows: {len(pseudo_label_rows)}")
+for row in pseudo_label_rows[:3]:
+    print(row)
+''',
+    )
+
+    replace_cell_containing(
+        notebook,
+        "RUN_MEGALODON_ADVANCED = False",
+        r'''
+RUN_MEGALODON_ADVANCED = False
+
+MEGALODON_REPO_ID = "FathomNet/megalodon"
+MEGALODON_FILENAME = "mbari-megalodon-yolov8x.pt"
+MEGALODON_MODEL_PATH = None
+
+if RUN_MEGALODON_ADVANCED:
+    from huggingface_hub import hf_hub_download
+
+    MEGALODON_MODEL_PATH = Path(
+        hf_hub_download(
+            repo_id=MEGALODON_REPO_ID,
+            filename=MEGALODON_FILENAME,
+            cache_dir=REPO_ROOT / ".cache" / "huggingface",
+        )
+    )
+    print(f"Megalodon weights: {MEGALODON_MODEL_PATH}")
+else:
+    print("Advanced Megalodon path is off by default.")
+    print("Set RUN_MEGALODON_ADVANCED = True to download the FathomNet checkpoint.")
+''',
+    )
+
+    replace_cell_containing(
+        notebook,
+        "RUN_MEGALODON_PREDICT = False",
+        r'''
+RUN_MEGALODON_PREDICT = False
+
+if RUN_MEGALODON_PREDICT and MEGALODON_MODEL_PATH is not None:
+    from ultralytics import YOLO
+    import matplotlib.pyplot as plt
+
+    megalodon_model = YOLO(str(MEGALODON_MODEL_PATH))
+    megalodon_prediction = megalodon_model.predict(
+        source=str(first_detect_image),
+        imgsz=640,
+        conf=0.25,
+        save=False,
+        project=REPO_ROOT / "runs" / "megalodon",
+        name="predict_before_finetune",
+        exist_ok=True,
+        verbose=False,
+    )[0]
+
+    plt.figure(figsize=(8, 5))
+    plt.imshow(megalodon_prediction.plot()[..., ::-1])
+    plt.axis("off")
+    plt.title("Megalodon prediction before fine-tuning")
+    plt.show()
+else:
+    print("Prediction exercise ready.")
+    print("Set RUN_MEGALODON_PREDICT = True after you have downloaded the checkpoint.")
+''',
+    )
+
+    replace_cell_containing(
+        notebook,
+        "RUN_MEGALODON_FINE_TUNE = False",
+        r'''
+RUN_MEGALODON_FINE_TUNE = False
+
+if RUN_MEGALODON_ADVANCED and RUN_MEGALODON_FINE_TUNE and RUN_LIVE_TRAINING and MEGALODON_MODEL_PATH is not None:
+    from ultralytics import YOLO
+
+    megalodon_finetune_args = build_train_args(
+        n_epochs=2,
+        imgsz=640,
+        batch=2,
+        lr0=0.0005,
+        patience=5,
+        project=REPO_ROOT / "runs" / "megalodon",
+        name="finetune_tutorial_binary",
+    )
+
+    megalodon_finetune_model = YOLO(str(MEGALODON_MODEL_PATH))
+    megalodon_finetune_result = megalodon_finetune_model.train(
+        data=str(DETECT_YAML),
+        **megalodon_finetune_args,
+    )
+    megalodon_finetune_save_dir = (
+        getattr(megalodon_finetune_result, "save_dir", None)
+        or getattr(megalodon_finetune_model.trainer, "save_dir", None)
+    )
+    plot_training_curves(
+        Path(megalodon_finetune_save_dir) / "results.csv",
+        metric_columns=["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"],
+        title="Megalodon fine-tuning metrics",
+    )
+else:
+    print("Fine-tuning scaffold is ready.")
+    print("Set RUN_MEGALODON_ADVANCED = True, RUN_MEGALODON_FINE_TUNE = True, and use a GPU.")
+''',
+    )
+
 
 def add_answer_key_cells(notebook: dict) -> None:
     """Add compact answer-key notes after the main exercise prompts."""
@@ -253,6 +548,20 @@ For a three-hour live session, a reasonable pacing target is:
 - Collapsing many categories into `object` removes biological identity, taxonomy, and ecological meaning, but makes a short detection exercise easier and more stable.
 - Restoring tiny boxes would push the area histogram left, increase the number of labels per image, and likely lower short-run mAP for a small model because localization becomes much harder.
 - The COCO subset is useful for reasoning about categories and conversion; the prepared YOLO folders are useful for short live training.
+"""
+        ),
+    )
+
+    insert_after_heading(
+        notebook,
+        "### Advanced Exercise: Audit The Train/Validation Split",
+        md(
+            r"""
+### Master Notes: Split Audit
+
+- The expected overlap between train and validation image stems is zero.
+- This audit is intentionally simple: leakage, object counts, and box-size summaries catch many common split problems.
+- A representative validation set matters more than a polished training curve. If validation differs sharply from training, mAP can mislead.
 """
         ),
     )
@@ -365,6 +674,20 @@ For a three-hour live session, a reasonable pacing target is:
 
     insert_after_heading(
         notebook,
+        "### Advanced Exercise: Build A Confusion Matrix From Predictions",
+        md(
+            r"""
+### Master Notes: Prediction Confusion Matrix
+
+- Keep this advanced exercise gated until a trained classification checkpoint exists.
+- If a generic ImageNet classifier is used instead of the tutorial-trained checkpoint, predicted class names may not match the five tutorial folders.
+- The useful teaching point is the mapping from validation folder names to true labels and from model outputs to predicted labels.
+"""
+        ),
+    )
+
+    insert_after_heading(
+        notebook,
         "### Detection Exercises",
         md(
             r"""
@@ -397,6 +720,20 @@ For a three-hour live session, a reasonable pacing target is:
 
     insert_after_heading(
         notebook,
+        "### Advanced Exercise: Rasterize A YOLO Polygon",
+        md(
+            r"""
+### Master Notes: Rasterization
+
+- This exercise connects the set notation for masks to the polygon text file format.
+- Rasterization introduces pixel-grid choices: rounding, boundary inclusion, and holes can all matter in production.
+- Comparing mask area to bounding-box area helps explain why mask metrics and box metrics need not move together.
+"""
+        ),
+    )
+
+    insert_after_heading(
+        notebook,
         "### SAM3 Exercises",
         md(
             r"""
@@ -406,6 +743,20 @@ For a three-hour live session, a reasonable pacing target is:
 - Specific prompts such as `small crab` can improve precision when the concept is visually present, but often return nothing when the image lacks the target or the prompt misses the model's visual vocabulary.
 - Raising `CONFIDENCE_THRESHOLD` filters low-score masks; expect fewer detections, higher apparent precision, and lower recall.
 - SAM3 pseudo-labels are useful when they reduce annotation effort, but noisy pseudo-labels can teach a supervised model the prompt model's mistakes.
+"""
+        ),
+    )
+
+    insert_after_heading(
+        notebook,
+        "### Advanced Exercise: Export SAM3 Pseudo-Labels",
+        md(
+            r"""
+### Master Notes: SAM3 Pseudo-Labels
+
+- The cached polygons are normalized, so the conversion to YOLO rows is mostly filtering and flattening.
+- The hard part is not the file format; it is deciding whether prompt-generated labels are trustworthy enough to train on.
+- Good discussion prompt: which pseudo-label errors would a supervised model amplify?
 """
         ),
     )

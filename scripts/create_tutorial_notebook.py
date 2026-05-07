@@ -667,11 +667,17 @@ print(f"  min={min(annotations_by_image.values())}, max={max(annotations_by_imag
 ### Object Size Distribution
 
 This histogram shows how large the detection boxes are as a fraction of image area. It matters because tiny objects are harder to localize, and the tutorial labels intentionally filter out extremely tiny boxes for the live training exercises.
+
+The bundle uses a normalized bounding-box area threshold of `0.005`: an object is kept only if its box covers at least `0.5%` of the image area. For segmentation labels, the same idea is applied to the bounding box around the polygon.
+
+This is a teaching choice, not a scientific law. It makes short training runs easier to interpret because the labels focus on visible organisms. The tradeoff is that the live task becomes "find larger, visually salient objects," not "find every organism in the scene."
 """
         ),
         code(
             r"""
 import matplotlib.pyplot as plt
+
+print("Tiny-object filter threshold:", manifest["stats"]["yolo_min_box_area"])
 
 label_paths = sorted((detect_paths["root"] / "labels" / "train").glob("*.txt")) + sorted((detect_paths["root"] / "labels" / "val").glob("*.txt"))
 box_area_fractions = []
@@ -696,6 +702,53 @@ plt.ylabel("count")
 plt.title("Object sizes in the live YOLO detection labels")
 plt.grid(alpha=0.25)
 plt.show()
+"""
+        ),
+        md(
+            r"""
+### Advanced Exercise: Audit The Train/Validation Split
+
+A validation metric is only useful if the validation split is independent and reasonably representative. In this exercise, audit the YOLO detection split before trusting its mAP.
+
+Implement `audit_yolo_split_exercise(...)` so it reports:
+
+- image counts in `train` and `val`;
+- whether any image stems appear in both splits;
+- object instances per split;
+- median box area per split.
+
+Hints:
+
+- labels live under `labels/train` and `labels/val`;
+- image IDs can be compared by filename stem;
+- YOLO detection rows store normalized `width` and `height` in columns 4 and 5;
+- a suspicious audit result is a modeling problem, not just a data-loading problem.
+"""
+        ),
+        code(
+            r"""
+def audit_yolo_split_exercise(dataset_root):
+    '''Audit leakage and rough distribution shift for a YOLO detection dataset.
+
+    Return a dictionary with split counts, overlap information, instance counts,
+    and median normalized box areas. Leave the return value as `None` until you
+    are ready to implement the exercise.
+    '''
+
+    # TODO:
+    # 1. Collect image stems from images/train and images/val.
+    # 2. Compare train and val stems to detect leakage.
+    # 3. Read label rows from labels/train and labels/val.
+    # 4. Count instances and compute each box area as width * height.
+    # 5. Return a compact dictionary that you can print with json.dumps(...).
+    return None
+
+
+split_audit = audit_yolo_split_exercise(detect_paths["root"])
+if split_audit is None:
+    print("Exercise ready: implement audit_yolo_split_exercise(...) to audit the train/validation split.")
+else:
+    print(json.dumps(split_audit, indent=2))
 """
         ),
         md(
@@ -931,6 +984,57 @@ plot_confusion_matrix(toy_confusion, classes, normalize=True, title="Discussion 
         ),
         md(
             r"""
+### Advanced Exercise: Build A Confusion Matrix From Predictions
+
+The toy matrix above is useful for reading practice. A real confusion matrix should come from model predictions on validation images.
+
+Use the Ultralytics classification prediction docs and `sklearn.metrics.confusion_matrix` to implement `build_confusion_matrix_from_predictions(...)`.
+
+Hints:
+
+- validation crops are stored in `CLASSIFY_ROOT / "val" / class_name`;
+- the true class comes from the folder name;
+- an Ultralytics classification result has class probabilities in `result.probs`;
+- use the trained `classification_best_model_path` if it exists, otherwise this exercise is best run after live training.
+"""
+        ),
+        code(
+            r"""
+RUN_CLASSIFICATION_CONFUSION_ADVANCED = False
+
+def build_confusion_matrix_from_predictions(model_or_path, val_root):
+    '''Predict validation crops and return `(matrix, class_names)`.
+
+    Leave the return value as `None` until you are ready to implement the
+    advanced exercise.
+    '''
+
+    # TODO:
+    # 1. Load a YOLO classification model.
+    # 2. Walk through each class folder in `val_root`.
+    # 3. Predict each image and record true/predicted class ids.
+    # 4. Use sklearn.metrics.confusion_matrix(...).
+    return None
+
+
+if RUN_CLASSIFICATION_CONFUSION_ADVANCED:
+    model_path = classification_best_model_path
+    if model_path is None:
+        print("Run live classification training first so `classification_best_model_path` exists.")
+    else:
+        confusion_result = build_confusion_matrix_from_predictions(model_path, CLASSIFY_ROOT / "val")
+        if confusion_result is None:
+            print("Exercise ready: implement build_confusion_matrix_from_predictions(...).")
+        else:
+            matrix, class_names = confusion_result
+            plot_confusion_matrix(matrix, class_names, normalize=True, title="Validation confusion matrix")
+else:
+    print("Advanced confusion-matrix exercise is ready.")
+    print("Set RUN_CLASSIFICATION_CONFUSION_ADVANCED = True after implementing the helper.")
+"""
+        ),
+        md(
+            r"""
 ### Classification Exercises
 
 Beginner:
@@ -949,7 +1053,7 @@ Intermediate:
 Advanced:
 
 - Design a fair pretrained-vs-random-initialization comparison. What would you keep fixed?
-- Replace the toy confusion matrix with predictions from your live model.
+- Complete `build_confusion_matrix_from_predictions(...)` and replace the toy matrix with predictions from your live model.
 - Which two classes are most confusable, and what visual ambiguity might explain it?
 - Propose a better class grouping for this small crop dataset.
 """
@@ -1613,6 +1717,61 @@ print("mask IoU:", mask_iou(mask_a, mask_b))
         ),
         md(
             r"""
+### Advanced Exercise: Rasterize A YOLO Polygon
+
+YOLO segmentation labels store polygons, but mask IoU is defined on pixels. To connect the two, rasterize one normalized polygon row into a binary mask.
+
+Implement `yolo_polygon_row_to_mask(...)`.
+
+Hints:
+
+- a YOLO segmentation row is `class_id x1 y1 x2 y2 ...`;
+- multiply normalized x coordinates by image width and y coordinates by image height;
+- `PIL.ImageDraw.Draw(...).polygon(...)` can fill a polygon;
+- the output can be a NumPy boolean array or nested list of `0/1` values.
+"""
+        ),
+        code(
+            r"""
+def yolo_polygon_row_to_mask(row, image_width, image_height):
+    '''Rasterize one YOLO segmentation polygon row into a binary mask.
+
+    Leave the return value as `None` until you are ready to implement the
+    advanced exercise.
+    '''
+
+    # TODO:
+    # 1. Parse row[1:] as normalized x/y coordinate pairs.
+    # 2. Convert normalized coordinates to pixel coordinates.
+    # 3. Fill the polygon into a binary image.
+    # 4. Return the mask.
+    return None
+
+
+example_segment_row = [float(part) for part in first_segment_label.read_text().splitlines()[0].split()]
+from PIL import Image
+
+with Image.open(first_segment_image) as example_segment_image:
+    example_width, example_height = example_segment_image.size
+
+candidate_mask = yolo_polygon_row_to_mask(example_segment_row, example_width, example_height)
+if candidate_mask is None:
+    print("Exercise ready: implement yolo_polygon_row_to_mask(...) to rasterize a polygon label.")
+else:
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    candidate_mask = np.asarray(candidate_mask).astype(bool)
+    print("mask shape:", candidate_mask.shape, "mask pixels:", int(candidate_mask.sum()))
+    plt.figure(figsize=(6, 4))
+    plt.imshow(candidate_mask, cmap="gray")
+    plt.axis("off")
+    plt.title("Rasterized YOLO polygon")
+    plt.show()
+"""
+        ),
+        md(
+            r"""
 ### Train Or Load A Small Segmentation Run
 
 Now train the segmentation model, or load cached curves if live training is unavailable. The important difference from detection is that the report contains both box metrics and mask metrics. Compare them: a model can learn reasonable boxes before it learns precise masks. For a live run, the best validation checkpoint is saved as `weights/best.pt`.
@@ -1729,6 +1888,7 @@ Intermediate:
 
 Advanced:
 
+- Complete `yolo_polygon_row_to_mask(...)` and compare the rasterized mask area with the polygon's bounding-box area.
 - Use the coarse biological label plan from the source YOLO repo as an after-session extension.
 - Ask whether binary "object" segmentation is a scientifically useful target, or only a stepping stone.
 - Propose a rule for dropping or keeping tiny polygons, then predict how that rule will affect recall and mAP.
@@ -1837,6 +1997,54 @@ for prompt in ["fish", "sponge", "gelatinous animal", "small crab", "echinoderm"
         ),
         md(
             r"""
+### Advanced Exercise: Export SAM3 Pseudo-Labels
+
+Promptable segmentation can be used to create **pseudo-labels**: labels produced by a model instead of a human. This can speed up annotation, but it can also copy the prompt model's mistakes into your supervised training set.
+
+Implement `sam3_result_to_yolo_pseudo_labels(...)` so it converts cached SAM3-style polygons into YOLO segmentation rows.
+
+Hints:
+
+- `sam3_result["polygons"]` is a list of polygons;
+- `sam3_result["scores"]` is aligned with those polygons;
+- the cached polygons are already normalized to `[0, 1]`;
+- filter out masks below `score_threshold`;
+- each output row should look like `[class_id, x1, y1, x2, y2, ...]`.
+"""
+        ),
+        code(
+            r"""
+def sam3_result_to_yolo_pseudo_labels(result, class_id=0, score_threshold=0.5):
+    '''Convert SAM3-style polygons into YOLO segmentation pseudo-label rows.
+
+    Leave the return value as `None` until you are ready to implement the
+    advanced exercise.
+    '''
+
+    # TODO:
+    # 1. Iterate over polygons and scores together.
+    # 2. Skip polygons with scores below `score_threshold`.
+    # 3. Flatten each polygon into a YOLO segmentation row.
+    # 4. Return the list of rows.
+    return None
+
+
+pseudo_label_rows = sam3_result_to_yolo_pseudo_labels(
+    sam3_result,
+    class_id=0,
+    score_threshold=CONFIDENCE_THRESHOLD,
+)
+
+if pseudo_label_rows is None:
+    print("Exercise ready: implement sam3_result_to_yolo_pseudo_labels(...).")
+else:
+    print(f"pseudo-label rows: {len(pseudo_label_rows)}")
+    for row in pseudo_label_rows[:3]:
+        print(row)
+"""
+        ),
+        md(
+            r"""
 ### SAM3 Exercises
 
 Beginner:
@@ -1848,7 +2056,7 @@ Beginner:
 Advanced:
 
 - If live SAM3 works, compare cached fallback with live masks.
-- Try using SAM3 outputs as pseudo-labels, then reason about when pseudo-label noise helps or hurts supervised training.
+- Complete `sam3_result_to_yolo_pseudo_labels(...)`, then reason about when pseudo-label noise helps or hurts supervised training.
 """
         ),
         md(
