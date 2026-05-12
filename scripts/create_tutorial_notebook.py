@@ -1831,7 +1831,7 @@ This cell checks whether live SAM3 is possible and lists the cached prompt outpu
             r"""
 ### Optional: Install SAM3 For Live Inference
 
-The cached SAM3 path works without installing SAM3. Live SAM3 needs the official SAM3 package, a compatible Python/CUDA/PyTorch runtime, and checkpoint access. The bootstrap status above tells you which checks are failing. If `sam3_importable` is `false`, SAM3 is not installed in the current runtime.
+The cached SAM3 path works without installing SAM3. Live SAM3 needs the official SAM3 package, Python 3.12 or newer, PyTorch 2.7 or newer, a CUDA-compatible GPU with CUDA 12.6 or newer, and checkpoint access. The bootstrap status above tells you which checks are failing. If `sam3_importable` is `false`, SAM3 is not installed in the current runtime.
 
 Set `INSTALL_SAM3_FOR_LIVE = True` only if you want to try live SAM3. This can take several minutes in Colab. The install source is the official SAM3 GitHub repository: https://github.com/facebookresearch/sam3
 """

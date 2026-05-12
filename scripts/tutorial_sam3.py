@@ -5,10 +5,23 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 from getpass import getpass
 from pathlib import Path
+
+
+def _version_at_least(version: str | None, minimum: tuple[int, int]) -> bool:
+    """Return whether a dotted version string is at least `(major, minor)`."""
+
+    if version is None:
+        return False
+    match = re.match(r"^(\d+)\.(\d+)", version)
+    if not match:
+        return False
+    major, minor = (int(match.group(1)), int(match.group(2)))
+    return (major, minor) >= minimum
 
 
 def sam3_can_run_live() -> dict[str, object]:
@@ -17,12 +30,18 @@ def sam3_can_run_live() -> dict[str, object]:
     python_ok = sys.version_info >= (3, 12)
     sam3_importable = importlib.util.find_spec("sam3") is not None
     torch_importable = importlib.util.find_spec("torch") is not None
+    torch_ok = False
+    cuda_toolkit_ok = False
     hf_token_present = bool(os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
     info: dict[str, object] = {
         "python_ok": python_ok,
         "sam3_importable": sam3_importable,
         "torch_importable": torch_importable,
+        "torch_ok": torch_ok,
+        "torch_version": None,
         "cuda_available": False,
+        "torch_cuda_version": None,
+        "cuda_toolkit_ok": cuda_toolkit_ok,
         "hf_token_present": hf_token_present,
         "blockers": [],
         "can_run": False,
@@ -30,6 +49,12 @@ def sam3_can_run_live() -> dict[str, object]:
     if info["torch_importable"]:
         import torch
 
+        info["torch_version"] = str(torch.__version__)
+        info["torch_cuda_version"] = getattr(torch.version, "cuda", None)
+        torch_ok = _version_at_least(info["torch_version"], (2, 7))
+        cuda_toolkit_ok = _version_at_least(info["torch_cuda_version"], (12, 6))
+        info["torch_ok"] = torch_ok
+        info["cuda_toolkit_ok"] = cuda_toolkit_ok
         info["cuda_available"] = bool(torch.cuda.is_available())
 
     if not python_ok:
@@ -38,15 +63,21 @@ def sam3_can_run_live() -> dict[str, object]:
         info["blockers"].append("The `sam3` package is not installed or not importable.")
     if not torch_importable:
         info["blockers"].append("PyTorch is not installed or not importable.")
+    if torch_importable and not torch_ok:
+        info["blockers"].append("SAM3 requires PyTorch 2.7 or newer.")
     if not info["cuda_available"]:
         info["blockers"].append("A CUDA GPU is required for the live SAM3 path.")
+    if torch_importable and not cuda_toolkit_ok:
+        info["blockers"].append("SAM3 requires a PyTorch build with CUDA 12.6 or newer.")
     if not hf_token_present:
         info["blockers"].append("No Hugging Face token is configured in HF_TOKEN or HUGGING_FACE_HUB_TOKEN.")
 
     info["can_run"] = bool(
         info["python_ok"]
         and info["sam3_importable"]
+        and info["torch_ok"]
         and info["cuda_available"]
+        and info["cuda_toolkit_ok"]
         and info["hf_token_present"]
     )
     return info
