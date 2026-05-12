@@ -154,9 +154,14 @@ def plot_training_curves(
     results_csv_path: str | Path,
     *,
     metric_columns: Sequence[str] | None = None,
+    include_training: bool = False,
     title: str | None = None,
 ):
-    """Plot selected training metrics from an Ultralytics-style CSV."""
+    """Plot selected metrics from an Ultralytics-style training CSV.
+
+    Set `include_training=True` to add matching `train/...` columns for
+    requested `val/...` columns when those training columns are present.
+    """
 
     plt, _ = _require_matplotlib()
     path = Path(results_csv_path)
@@ -170,13 +175,43 @@ def plot_training_curves(
         print(f"No rows found in {path}")
         return None
 
-    columns = rows[0].keys()
+    columns = list(rows[0].keys())
     if metric_columns is None:
-        metric_columns = [
+        validation_metrics = [
             column
             for column in columns
             if column.startswith("metrics/") or column in {"accuracy_top1", "val/accuracy_top1"}
         ][:6]
+        metric_columns = validation_metrics
+        if include_training:
+            loss_pairs: list[str] = []
+            for column in columns:
+                if not column.startswith("val/") or "loss" not in column:
+                    continue
+                train_column = "train/" + column.removeprefix("val/")
+                if train_column in columns and train_column not in loss_pairs:
+                    loss_pairs.append(train_column)
+                if column not in loss_pairs:
+                    loss_pairs.append(column)
+            metric_columns = loss_pairs + list(metric_columns)
+    else:
+        metric_columns = list(metric_columns)
+        if include_training:
+            expanded_columns: list[str] = []
+            for column in metric_columns:
+                if column.startswith("val/"):
+                    train_column = "train/" + column.removeprefix("val/")
+                    if train_column in columns and train_column not in expanded_columns:
+                        expanded_columns.append(train_column)
+                if column not in expanded_columns:
+                    expanded_columns.append(column)
+            metric_columns = expanded_columns
+
+    metric_columns = [column for column in metric_columns if column in columns]
+    if not metric_columns:
+        print(f"No requested metric columns found in {path}")
+        return None
+
     epochs = [float(row.get("epoch", index + 1)) for index, row in enumerate(rows)]
 
     fig, ax = plt.subplots(figsize=(8, 4))

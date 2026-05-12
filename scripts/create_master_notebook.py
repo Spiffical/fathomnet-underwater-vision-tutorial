@@ -473,6 +473,7 @@ if RUN_MEGALODON_ADVANCED and RUN_MEGALODON_FINE_TUNE and RUN_LIVE_TRAINING and 
     plot_training_curves(
         Path(megalodon_finetune_save_dir) / "results.csv",
         metric_columns=["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"],
+        include_training=False,
         title="Megalodon fine-tuning metrics",
     )
 else:

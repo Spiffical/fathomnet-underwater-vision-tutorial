@@ -792,7 +792,9 @@ Now move from the hand-computed loss to an actual model. This cell trains `yolo1
 
 Focus on the training arguments: `n_epochs`, `imgsz`, `batch`, `optimizer`, and `lr0`. Those are the knobs you will modify in the exercises. When live training runs, Ultralytics saves the validation-best checkpoint at `weights/best.pt`.
 
-The plot reports top-1 and top-5 accuracy when those columns are available. Top-1 asks whether the highest-probability class is correct. Top-5 asks whether the truth appears anywhere in the five highest-probability classes, which is useful here because the classifier has more than five possible labels.
+The first plot compares training loss with validation loss. Training loss is computed on examples that supply gradients; validation loss is computed on held-out examples. If training loss keeps improving while validation loss gets worse, you are seeing overfitting.
+
+The second plot reports validation top-1 and top-5 accuracy when those columns are available. Top-1 asks whether the highest-probability class is correct. Top-5 asks whether the truth appears anywhere in the five highest-probability classes, which is useful here because the classifier has more than five possible labels.
 """
         ),
         code(
@@ -840,7 +842,18 @@ classification_results_csv = (
 if not classification_results_csv.exists():
     classification_results_csv = CACHED_CLASSIFY_RESULTS
 
-plot_training_curves(classification_results_csv, title="Classification learning curve")
+plot_training_curves(
+    classification_results_csv,
+    metric_columns=["val/loss"],
+    include_training=True,
+    title="Classification loss: training vs validation",
+)
+plot_training_curves(
+    classification_results_csv,
+    metric_columns=["metrics/accuracy_top1", "metrics/accuracy_top5"],
+    include_training=False,
+    title="Classification validation accuracy",
+)
 """
         ),
         md(
@@ -854,6 +867,8 @@ The learning rate controls the scale of each gradient step. In a small workshop 
 - too large: loss or validation accuracy jumps around or degrades.
 
 Try one or more learning rates from `lr0 = 1e-4`, `1e-3`, and `1e-2`. The default mini-lab uses several epochs because one epoch is often too short to reveal the difference between slow, useful, and unstable optimization. The cached curves give you a baseline comparison, and a live GPU run lets you see how much the result changes from one run to the next.
+
+This mini-lab plots validation accuracy only so the comparison across learning rates stays uncluttered. In other cells, `plot_training_curves(..., include_training=True)` can add matching training curves for train/validation loss comparisons.
 """
         ),
         code(
@@ -875,7 +890,12 @@ if RUN_CLASSIFICATION_LR_LAB and RUN_LIVE_TRAINING:
     ]
     for row in lr_rows:
         print(row)
-        plot_training_curves(row["results_csv"], title=f"classification lr0={row['lr0']}")
+        plot_training_curves(
+            row["results_csv"],
+            metric_columns=["metrics/accuracy_top1", "metrics/accuracy_top5"],
+            include_training=False,
+            title=f"classification lr0={row['lr0']}",
+        )
 else:
     print("Learning-rate lab is ready.")
     print("Set RUN_CLASSIFICATION_LR_LAB = True on a GPU to run these trials live.")
@@ -1192,6 +1212,7 @@ if not detection_results_csv.exists():
 plot_training_curves(
     detection_results_csv,
     metric_columns=["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"],
+    include_training=False,
     title="Detection metrics",
 )
 """
@@ -1285,7 +1306,8 @@ if RUN_TINY_OVERFIT_LAB and RUN_LIVE_TRAINING:
         print(f"Best validation checkpoint: {tiny_best_model_path}")
     plot_training_curves(
         Path(tiny_save_dir) / "results.csv",
-        metric_columns=["train/box_loss", "val/box_loss", "metrics/mAP50(B)"],
+        metric_columns=["val/box_loss", "metrics/mAP50(B)"],
+        include_training=True,
         title="Tiny-dataset overfit check",
     )
 else:
@@ -1726,6 +1748,7 @@ if not segmentation_results_csv.exists():
 plot_training_curves(
     segmentation_results_csv,
     metric_columns=["metrics/mAP50(B)", "metrics/mAP50-95(B)", "metrics/mAP50(M)", "metrics/mAP50-95(M)"],
+    include_training=False,
     title="Segmentation: box mAP vs mask mAP",
 )
 """
