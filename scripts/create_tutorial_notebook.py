@@ -1811,7 +1811,7 @@ $$g_\phi(x,q)\rightarrow \{(M_i,b_i,s_i)\}_{i=1}^m.$$
 
 That changes the main question from "how do you train a new supervised head?" to "which prompt and threshold define the object concept you actually want?"
 
-The default path below uses cached SAM3-like outputs so everyone can complete the lab. If your runtime passes the live SAM3 checks and you have checkpoint access, set `USE_LIVE_SAM3 = True`.
+The default path below uses cached SAM3-like outputs so everyone can complete the lab. If your runtime passes the live SAM3 checks and you have checkpoint access, enter a Hugging Face token in the optional token cell and let the notebook set `USE_LIVE_SAM3 = True`.
 """
         ),
         md(
@@ -1823,6 +1823,44 @@ This cell checks whether live SAM3 is possible and lists the cached prompt outpu
         ),
         code(
             section_bootstrap("sam3")
+        ),
+        md(
+            r"""
+### Optional: Hugging Face Token For Live SAM3
+
+Live SAM3 checkpoint loading may require a Hugging Face account and a token. The cached path above does not need a token.
+
+To create a token:
+
+1. Sign in to Hugging Face.
+2. Open https://huggingface.co/settings/tokens.
+3. Click **New token**.
+4. Choose a `read` token, or a fine-grained token with read access to the SAM3 model/checkpoint you plan to use.
+5. Copy the token and paste it into the hidden input when you run the cell below.
+
+Official Hugging Face token documentation: https://huggingface.co/docs/hub/security-tokens
+
+Do not paste a real token into a saved notebook cell, markdown cell, chat, or GitHub issue. The cell below uses hidden input and stores the token only in this runtime's environment variables.
+"""
+        ),
+        code(
+            r"""
+ENTER_HF_TOKEN_FOR_LIVE_SAM3 = False
+
+if ENTER_HF_TOKEN_FOR_LIVE_SAM3:
+    token_status = configure_huggingface_token()
+    print(json.dumps(token_status, indent=2))
+else:
+    print("Token entry is off. Set ENTER_HF_TOKEN_FOR_LIVE_SAM3 = True to enter a token.")
+
+SAM3_STATUS = sam3_can_run_live()
+USE_LIVE_SAM3 = bool(SAM3_STATUS["can_run"])
+
+print(json.dumps(SAM3_STATUS, indent=2))
+print(f"USE_LIVE_SAM3 = {USE_LIVE_SAM3}")
+if not USE_LIVE_SAM3:
+    print("Using cached SAM3-style outputs for the cells below.")
+"""
         ),
         md(
             r"""

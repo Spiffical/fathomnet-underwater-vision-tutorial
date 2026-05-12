@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import sys
+from getpass import getpass
 from pathlib import Path
 
 
@@ -31,6 +32,42 @@ def sam3_can_run_live() -> dict[str, object]:
         and info["hf_token_present"]
     )
     return info
+
+
+def configure_huggingface_token(
+    token: str | None = None,
+    *,
+    prompt_if_missing: bool = True,
+) -> dict[str, object]:
+    """Store a Hugging Face token in the current runtime without printing it.
+
+    The token is kept in environment variables used by `huggingface_hub`,
+    Transformers, and SAM3 checkpoint-loading utilities. It is not written to
+    the notebook, git credentials, or any repository file.
+    """
+
+    if token is None and prompt_if_missing:
+        token = getpass("Paste a Hugging Face read token. Input is hidden: ")
+
+    token = (token or "").strip()
+    if not token:
+        return {"configured": False, "reason": "no token provided"}
+
+    os.environ["HF_TOKEN"] = token
+    os.environ["HUGGING_FACE_HUB_TOKEN"] = token
+
+    login_result = "huggingface_hub not importable"
+    if importlib.util.find_spec("huggingface_hub") is not None:
+        from huggingface_hub import login
+
+        login(token=token, add_to_git_credential=False)
+        login_result = "logged in for this runtime"
+
+    return {
+        "configured": True,
+        "environment_variables": ["HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"],
+        "login": login_result,
+    }
 
 
 def _load_index(bundle_root: str | Path) -> dict:

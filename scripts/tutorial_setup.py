@@ -420,6 +420,7 @@ def bootstrap_section(section: str, namespace: dict[str, object] | None = None) 
     if section_key == "sam3":
         from scripts.tutorial_sam3 import (
             available_cached_prompts,
+            configure_huggingface_token,
             load_cached_sam3_result,
             run_sam3_text_prompt,
             sam3_can_run_live,
@@ -431,6 +432,7 @@ def bootstrap_section(section: str, namespace: dict[str, object] | None = None) 
         namespace.update(
             {
                 "available_cached_prompts": available_cached_prompts,
+                "configure_huggingface_token": configure_huggingface_token,
                 "load_cached_sam3_result": load_cached_sam3_result,
                 "run_sam3_text_prompt": run_sam3_text_prompt,
                 "sam3_can_run_live": sam3_can_run_live,
