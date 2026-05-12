@@ -421,6 +421,7 @@ def bootstrap_section(section: str, namespace: dict[str, object] | None = None) 
         from scripts.tutorial_sam3 import (
             available_cached_prompts,
             configure_huggingface_token,
+            install_sam3_package,
             load_cached_sam3_result,
             run_sam3_text_prompt,
             sam3_can_run_live,
@@ -433,6 +434,7 @@ def bootstrap_section(section: str, namespace: dict[str, object] | None = None) 
             {
                 "available_cached_prompts": available_cached_prompts,
                 "configure_huggingface_token": configure_huggingface_token,
+                "install_sam3_package": install_sam3_package,
                 "load_cached_sam3_result": load_cached_sam3_result,
                 "run_sam3_text_prompt": run_sam3_text_prompt,
                 "sam3_can_run_live": sam3_can_run_live,

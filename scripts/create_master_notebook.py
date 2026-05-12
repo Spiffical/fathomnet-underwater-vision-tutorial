@@ -487,7 +487,7 @@ def add_answer_key_cells(notebook: dict) -> None:
 
     insert_after_heading(
         notebook,
-        "## How To Use This Notebook",
+        "## Notebook Map",
         md(
             r"""
 ### Suggested Instructor Timing

@@ -25,7 +25,7 @@ def build_notebook() -> dict:
         return f"""
 from scripts.tutorial_setup import bootstrap_section
 
-bootstrap_section({section!r}, globals())
+_ = bootstrap_section({section!r}, globals())
 """
 
     cells = [
@@ -43,7 +43,7 @@ You will work with images derived from the [FathomNet Database](https://database
 
 Underwater imagery is not just "ImageNet, but blue." Vehicle lights, water-column attenuation, turbidity, motion blur, scale changes, partial animals, transparent bodies, and long-tailed taxonomy all make this a useful stress test for computer vision.
 
-Main source anchors:
+Reference links:
 
 - FathomNet Database: https://database.fathomnet.org/fathomnet/#/
 - FathomNet data use policy: https://www.fathomnet.org/datause
@@ -57,20 +57,19 @@ Main source anchors:
         ),
         md(
             r"""
-## How To Use This Notebook
+## Notebook Map
 
-Start with setup and the first image grid so the visual problem is concrete. After that, you can follow the notebook in order or jump to the section that matches your comfort level.
+Start with setup and the first image grid so the visual problem is concrete. After that, you can follow the notebook in order or jump to the section that matches your comfort level. Each later section starts with a short **section bootstrap** cell that loads the variables and helpers needed for that section.
 
-The main path is:
+What you will do:
 
-1. inspect FathomNet-derived underwater images and annotations;
-2. warm up with a pretrained YOLO model on a familiar image;
-3. train a small classifier on organism crops;
-4. train and evaluate a binary object detector;
-5. train and evaluate an instance segmentation model;
-6. try text-prompt segmentation with cached or live SAM3 outputs.
-
-The sections are intentionally independent. If you skip ahead, run the short **section bootstrap** cell at the top of that section first.
+- **Setup and first look:** load the compact tutorial bundle, check the runtime, and immediately look at real underwater images.
+- **Dataset exploration:** inspect the same imagery through different label views: image-level crop classes, bounding boxes, and segmentation polygons.
+- **Pretrained YOLO warmup:** use an existing YOLO model before training anything, so prediction outputs and confidence scores have a concrete meaning.
+- **Classification:** train a small crop classifier and connect softmax, cross-entropy, learning rate, and confusion matrices to the observed results.
+- **Object detection:** fine-tune YOLO on binary organism boxes and study box parameterization, intersection over union (IoU), precision, recall, and mean average precision (mAP).
+- **Instance segmentation:** fine-tune YOLO segmentation on binary masks and compare box-level and mask-level evaluation.
+- **SAM3 promptable segmentation:** use text prompts such as `"fish"` or `"small crab"` to request masks, boxes, and scores, with cached outputs available for every runtime.
 
 The default notebook behavior is:
 
@@ -85,7 +84,7 @@ Vocabulary you will see:
 - **Segmentation** means predicting pixels or regions, not just a class or rectangle.
 - **Instance segmentation** means predicting a separate mask for each object instance.
 - **COCO** means "Common Objects in Context"; here it mostly refers to a widely used JSON annotation format for images, categories, bounding boxes, and segmentations.
-- **SAM3** is a promptable segmentation model in Meta's Segment Anything family; here you will use text prompts such as `"fish"` or `"small crab"`.
+- **SAM3** means "Segment Anything Model 3"; in this notebook it refers to Meta's promptable segmentation model for detecting and segmenting objects from text prompts.
 """
         ),
         md(
@@ -1799,7 +1798,9 @@ Advanced:
             r"""
 # Part 4: SAM3 Text-Prompt Segmentation Lab
 
-SAM3 changes the interface. Instead of training a new model for every label set, you can ask for a concept:
+SAM3 stands for **Segment Anything Model 3**. It is Meta's promptable segmentation foundation model for images and videos. "Promptable" means the model does not only take an image as input; it also takes a prompt that tells the model what kind of object or region you want. SAM3 can use text prompts, visual prompts such as points and boxes, and exemplar prompts. In this notebook you will focus on text prompts.
+
+SAM3 changes the interface compared with the supervised YOLO models above. Instead of training a new model for every label set, you can ask for a concept:
 
 ```text
 image + "fish" -> masks, boxes, scores
@@ -1811,7 +1812,9 @@ $$g_\phi(x,q)\rightarrow \{(M_i,b_i,s_i)\}_{i=1}^m.$$
 
 That changes the main question from "how do you train a new supervised head?" to "which prompt and threshold define the object concept you actually want?"
 
-The default path below uses cached SAM3-like outputs so everyone can complete the lab. If your runtime passes the live SAM3 checks and you have checkpoint access, enter a Hugging Face token in the optional token cell and let the notebook set `USE_LIVE_SAM3 = True`.
+This is useful for rapid exploration and for proposing pseudo-labels, but it is not magic. A prompt like `"fish"` may miss small or unusual fish; a broad prompt like `"marine organism"` may include objects that are not useful for your scientific question. You will inspect those failures directly.
+
+The default path below uses cached SAM3-style outputs so everyone can complete the lab. If your runtime passes the live SAM3 checks and you have checkpoint access, install SAM3, enter a Hugging Face token, and let the notebook set `USE_LIVE_SAM3 = True`.
 """
         ),
         md(
@@ -1826,9 +1829,35 @@ This cell checks whether live SAM3 is possible and lists the cached prompt outpu
         ),
         md(
             r"""
+### Optional: Install SAM3 For Live Inference
+
+The cached SAM3 path works without installing SAM3. Live SAM3 needs the official SAM3 package, a compatible Python/CUDA/PyTorch runtime, and checkpoint access. The bootstrap status above tells you which checks are failing. If `sam3_importable` is `false`, SAM3 is not installed in the current runtime.
+
+Set `INSTALL_SAM3_FOR_LIVE = True` only if you want to try live SAM3. This can take several minutes in Colab. The install source is the official SAM3 GitHub repository: https://github.com/facebookresearch/sam3
+"""
+        ),
+        code(
+            r"""
+INSTALL_SAM3_FOR_LIVE = False
+
+if INSTALL_SAM3_FOR_LIVE:
+    install_status = install_sam3_package()
+    print(json.dumps(install_status, indent=2))
+else:
+    print("SAM3 install is off. Set INSTALL_SAM3_FOR_LIVE = True to install the official SAM3 package.")
+
+SAM3_STATUS = sam3_can_run_live()
+USE_LIVE_SAM3 = bool(SAM3_STATUS["can_run"])
+
+print(json.dumps(SAM3_STATUS, indent=2))
+print(f"USE_LIVE_SAM3 = {USE_LIVE_SAM3}")
+"""
+        ),
+        md(
+            r"""
 ### Optional: Hugging Face Token For Live SAM3
 
-Live SAM3 checkpoint loading may require a Hugging Face account and a token. The cached path above does not need a token.
+Live SAM3 checkpoint loading may require a Hugging Face account, checkpoint access, and a token. The cached path above does not need a token.
 
 To create a token:
 

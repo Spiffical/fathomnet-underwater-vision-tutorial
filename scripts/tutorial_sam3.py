@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 from getpass import getpass
 from pathlib import Path
@@ -13,18 +14,35 @@ from pathlib import Path
 def sam3_can_run_live() -> dict[str, object]:
     """Check whether this runtime is likely able to run live SAM3 inference."""
 
+    python_ok = sys.version_info >= (3, 12)
+    sam3_importable = importlib.util.find_spec("sam3") is not None
+    torch_importable = importlib.util.find_spec("torch") is not None
+    hf_token_present = bool(os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
     info: dict[str, object] = {
-        "python_ok": sys.version_info >= (3, 12),
-        "sam3_importable": importlib.util.find_spec("sam3") is not None,
-        "torch_importable": importlib.util.find_spec("torch") is not None,
+        "python_ok": python_ok,
+        "sam3_importable": sam3_importable,
+        "torch_importable": torch_importable,
         "cuda_available": False,
-        "hf_token_present": bool(os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")),
+        "hf_token_present": hf_token_present,
+        "blockers": [],
         "can_run": False,
     }
     if info["torch_importable"]:
         import torch
 
         info["cuda_available"] = bool(torch.cuda.is_available())
+
+    if not python_ok:
+        info["blockers"].append("SAM3 requires Python 3.12 or newer.")
+    if not sam3_importable:
+        info["blockers"].append("The `sam3` package is not installed or not importable.")
+    if not torch_importable:
+        info["blockers"].append("PyTorch is not installed or not importable.")
+    if not info["cuda_available"]:
+        info["blockers"].append("A CUDA GPU is required for the live SAM3 path.")
+    if not hf_token_present:
+        info["blockers"].append("No Hugging Face token is configured in HF_TOKEN or HUGGING_FACE_HUB_TOKEN.")
+
     info["can_run"] = bool(
         info["python_ok"]
         and info["sam3_importable"]
@@ -32,6 +50,25 @@ def sam3_can_run_live() -> dict[str, object]:
         and info["hf_token_present"]
     )
     return info
+
+
+def install_sam3_package(
+    package_spec: str = "git+https://github.com/facebookresearch/sam3.git",
+    *,
+    quiet: bool = True,
+) -> dict[str, object]:
+    """Install the SAM3 package into the current notebook runtime."""
+
+    command = [sys.executable, "-m", "pip", "install"]
+    if quiet:
+        command.append("--quiet")
+    command.append(package_spec)
+    subprocess.check_call(command)
+    importlib.invalidate_caches()
+    return {
+        "package_spec": package_spec,
+        "sam3_importable": importlib.util.find_spec("sam3") is not None,
+    }
 
 
 def configure_huggingface_token(
@@ -60,8 +97,11 @@ def configure_huggingface_token(
     if importlib.util.find_spec("huggingface_hub") is not None:
         from huggingface_hub import login
 
-        login(token=token, add_to_git_credential=False)
-        login_result = "logged in for this runtime"
+        try:
+            login(token=token, add_to_git_credential=False)
+            login_result = "logged in for this runtime"
+        except Exception as exc:
+            login_result = f"login failed: {type(exc).__name__}: {exc}"
 
     return {
         "configured": True,
@@ -123,7 +163,7 @@ def run_sam3_text_prompt(
     """
 
     from PIL import Image
-    from sam3 import build_sam3_image_model
+    from sam3.model_builder import build_sam3_image_model
     from sam3.model.sam3_image_processor import Sam3Processor
 
     model = build_sam3_image_model()
