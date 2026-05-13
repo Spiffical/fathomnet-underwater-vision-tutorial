@@ -622,8 +622,9 @@ For a three-hour live session, a reasonable pacing target is:
 
 - A successful tiny-overfit run should drive training loss down sharply.
 - In this lab, validation intentionally points at the same images as training. This makes validation mAP a memorisation sanity check, not a generalisation estimate.
-- The helper chooses examples with visible labelled objects because very small objects can produce weak gradients and confusing visual feedback.
+- The helper starts with four large-object examples because very small objects can produce weak gradients and confusing visual feedback. Increasing `TINY_OVERFIT_IMAGE_COUNT` makes the sanity check harder.
 - Augmentations are disabled so the model sees the same tiny set every epoch.
+- If same-image mAP improves but fixed-threshold predictions still look sparse, lower the inspection confidence and use that to discuss AP as a threshold sweep rather than one fixed decision rule.
 - If training loss does not drop, first suspect data paths, label format, learning rate, batch size, or whether the labels actually align with the images.
 - This is a debugging test, not a final model-quality test.
 """

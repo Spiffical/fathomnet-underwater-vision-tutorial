@@ -1257,13 +1257,17 @@ except Exception as exc:
             r"""
 ### Mini-Lab: Overfit A Tiny Dataset
 
-A powerful debugging move is to ask whether the model can memorise a tiny training set. If it cannot overfit 8-12 examples, something may be wrong with the labels, model wiring, optimisation settings, or data path.
+A powerful debugging move is to ask whether the model can memorise a tiny training set. If it cannot overfit a few simple examples, something may be wrong with the labels, model wiring, optimisation settings, or data path.
 
 This lab is intentionally different from normal model evaluation:
 
-- it chooses examples with visible labelled objects rather than arbitrary tiny or empty labels;
+- it chooses a few examples with one large labelled object rather than arbitrary tiny or empty labels;
 - it uses the same images for training and validation, so validation mAP is a memorisation check, not a generalisation estimate;
 - it disables data augmentation because random crops, flips, colour shifts, and mosaic augmentation can make a tiny memorisation test much harder to interpret.
+
+Start with four large-object examples. Once that sanity check works, increase `TINY_OVERFIT_IMAGE_COUNT` or switch `selection_strategy` to `"easy"` to make the memorisation problem harder.
+
+The prediction panel uses a low inspection confidence because confidence calibration can be odd on a tiny memorisation run. That is another useful lesson: average precision (AP) summarises behaviour across confidence thresholds, while a plotted prediction uses one fixed threshold.
 
 This cell prepares the tiny dataset for you. Training is off by default because it is a live GPU exercise.
 """
@@ -1271,12 +1275,14 @@ This cell prepares the tiny dataset for you. Training is off by default because 
         code(
             r"""
 RUN_TINY_OVERFIT_LAB = False
+TINY_OVERFIT_IMAGE_COUNT = 4
+TINY_OVERFIT_INSPECTION_CONFIDENCE = 0.10
 tiny_detect_yaml = make_tiny_detection_dataset(
     DETECT_ROOT,
     REPO_ROOT / "tmp" / "tiny_detection_overfit",
-    train_images=8,
-    val_images=8,
-    selection_strategy="easy",
+    train_images=TINY_OVERFIT_IMAGE_COUNT,
+    val_images=TINY_OVERFIT_IMAGE_COUNT,
+    selection_strategy="large",
     val_from_train=True,
 )
 print(f"Tiny overfit dataset: {tiny_detect_yaml}")
@@ -1284,16 +1290,17 @@ print("For this lab only, the validation split contains the same examples as the
 
 if RUN_TINY_OVERFIT_LAB and RUN_LIVE_TRAINING:
     from ultralytics import YOLO
+    import matplotlib.pyplot as plt
 
-    TINY_OVERFIT_N_EPOCHS = 50
+    TINY_OVERFIT_N_EPOCHS = 80
     tiny_args = build_train_args(
         n_epochs=TINY_OVERFIT_N_EPOCHS,
         imgsz=640,
         batch=4,
         lr0=0.003,
-        patience=50,
+        patience=80,
         project=REPO_ROOT / "runs" / "tiny_overfit",
-        name="detect_8_images",
+        name="detect_large_object_sanity_check",
     )
     # For an overfit sanity check, remove augmentation so the model sees the
     # same small set of examples every epoch.
@@ -1328,6 +1335,35 @@ if RUN_TINY_OVERFIT_LAB and RUN_LIVE_TRAINING:
         include_training=True,
         title="Tiny-dataset overfit check",
     )
+
+    tiny_label_paths = sorted((Path(tiny_detect_yaml).parent / "labels" / "train").glob("*.txt"))
+
+    def _largest_label_area(label_path):
+        areas = []
+        for line in label_path.read_text().splitlines():
+            if not line.strip():
+                continue
+            _, _, _, width, height = map(float, line.split())
+            areas.append(width * height)
+        return max(areas) if areas else 0.0
+
+    first_tiny_label = max(tiny_label_paths, key=_largest_label_area)
+    first_tiny_image = Path(tiny_detect_yaml).parent / "images" / "train" / f"{first_tiny_label.stem}.jpg"
+    tiny_prediction = tiny_model.predict(
+        source=str(first_tiny_image),
+        imgsz=640,
+        conf=TINY_OVERFIT_INSPECTION_CONFIDENCE,
+        verbose=False,
+    )[0]
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+    draw_yolo_boxes(first_tiny_image, first_tiny_label, class_names={0: "object"}, ax=axes[0])
+    axes[0].set_title("tiny overfit truth label")
+    axes[1].imshow(tiny_prediction.plot()[..., ::-1])
+    axes[1].set_title(f"tiny overfit prediction, conf >= {TINY_OVERFIT_INSPECTION_CONFIDENCE}")
+    axes[1].axis("off")
+    plt.tight_layout()
+    plt.show()
 else:
     print("Tiny overfit lab is ready. Set RUN_TINY_OVERFIT_LAB = True on a GPU.")
     print("Success criterion: training loss drops strongly and same-image validation mAP improves.")
@@ -1547,7 +1583,7 @@ Intermediate:
 
 Advanced:
 
-- Turn on `RUN_TINY_OVERFIT_LAB` and check whether the model can memorise 8 training images.
+- Turn on `RUN_TINY_OVERFIT_LAB` and check whether the model can memorise four large-object training images. Then increase `TINY_OVERFIT_IMAGE_COUNT`.
 - Turn on the Megalodon advanced path, compare its predictions with `yolo11n.pt`, and decide whether the domain-specific checkpoint changes the failure modes.
 - Fine-tune Megalodon for one or two epochs, then compare its early metrics with the generic checkpoint run.
 - Explain how the precision-recall curve would move if the model became more conservative.
@@ -1856,6 +1892,8 @@ That changes the main question from "how do you train a new supervised head?" to
 This is useful for rapid exploration and for proposing pseudo-labels, but it is not magic. A prompt like `"fish"` may miss small or unusual fish; a broad prompt like `"marine organism"` may include objects that are not useful for your scientific question. You will inspect those failures directly.
 
 The default path below uses cached SAM3-style outputs so everyone can complete the lab. If your runtime passes the live SAM3 checks and you have checkpoint access, install SAM3, enter a Hugging Face token, and let the notebook set `USE_LIVE_SAM3 = True`.
+
+Live SAM3 is more fragile than the YOLO sections because it depends on the current public SAM3 package, large checkpoint downloads, CUDA support, and mixed-precision inference. The helper below wraps live inference in the dtype context SAM3 currently needs. If live inference still fails, the notebook reports the error and uses the cached output so the exercise can continue.
 """
         ),
         md(
@@ -1948,13 +1986,19 @@ def try_sam3_prompt(image_id, prompt, confidence_threshold=0.5):
     image_path = cached["image_path"]
 
     if USE_LIVE_SAM3:
-        live = run_sam3_text_prompt(
-            image_path,
-            prompt,
-            confidence_threshold=confidence_threshold,
-        )
-        live["image_path"] = image_path
-        return live
+        try:
+            live = run_sam3_text_prompt(
+                image_path,
+                prompt,
+                confidence_threshold=confidence_threshold,
+            )
+            live["image_path"] = image_path
+            return live
+        except RuntimeError as exc:
+            print("Live SAM3 failed, so this cell is using the cached output instead.")
+            print(type(exc).__name__, exc)
+            cached["source"] = "cached_after_live_sam3_error"
+            cached["live_error"] = f"{type(exc).__name__}: {exc}"
 
     cached["confidence_threshold"] = confidence_threshold
     return cached

@@ -353,6 +353,16 @@ def _detection_example_score(label_path: Path) -> float:
     return max(areas) + 0.15 * sum(areas) + 0.08 * len(areas)
 
 
+def _largest_detection_area(label_path: Path) -> tuple[float, int]:
+    """Return `(largest_area, instance_count)` for a detection label file."""
+
+    rows = _read_detection_rows(label_path)
+    if not rows:
+        return -1.0, 0
+    areas = [max(0.0, row[3]) * max(0.0, row[4]) for row in rows]
+    return max(areas), len(rows)
+
+
 def make_tiny_detection_dataset(
     source_root: str | Path,
     output_root: str | Path,
@@ -370,10 +380,11 @@ def make_tiny_detection_dataset(
     Parameters
     ----------
     selection_strategy:
-        Use `"first"` for deterministic alphabetical selection, or `"easy"` to
-        prefer images with visible labelled objects. The easy strategy is useful
-        for overfit checks because very small objects can produce weak gradients
-        and hard-to-interpret visual results.
+        Use `"first"` for deterministic alphabetical selection, `"easy"` to
+        prefer visible multi-object examples, or `"large"` to prefer examples
+        with one very large labelled object. The large-object strategy is useful
+        for overfit checks because tiny objects can produce weak gradients and
+        hard-to-interpret visual results.
     val_from_train:
         If true, copy the selected training examples into the validation split
         too. That is not a valid generalisation estimate, but it is the right
@@ -396,6 +407,16 @@ def make_tiny_detection_dataset(
                 if _matching_image_for_label(label_path, source_root / "images" / split) is not None
             ]
             return [label_path for _, label_path in sorted(scored, key=lambda item: (-item[0], item[1].name))[:count]]
+        if selection_strategy == "large":
+            scored = [
+                (*_largest_detection_area(label_path), label_path)
+                for label_path in label_paths
+                if _matching_image_for_label(label_path, source_root / "images" / split) is not None
+            ]
+            return [
+                label_path
+                for _, _, label_path in sorted(scored, key=lambda item: (-item[0], item[1], item[2].name))[:count]
+            ]
         raise ValueError(f"Unknown selection_strategy: {selection_strategy!r}")
 
     def copy_split(label_paths: list[Path], *, source_split: str, destination_split: str) -> None:

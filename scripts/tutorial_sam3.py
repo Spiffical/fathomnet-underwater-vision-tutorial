@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+from contextlib import nullcontext
 from getpass import getpass
 from pathlib import Path
 
@@ -196,12 +197,24 @@ def run_sam3_text_prompt(
     from PIL import Image
     from sam3.model_builder import build_sam3_image_model
     from sam3.model.sam3_image_processor import Sam3Processor
+    import torch
 
     model = build_sam3_image_model()
+    model.eval()
     processor = Sam3Processor(model, confidence_threshold=confidence_threshold)
     image = Image.open(image_path).convert("RGB")
-    state = processor.set_image(image)
-    output = processor.set_text_prompt(state=state, prompt=prompt)
+
+    # The current public SAM3 image path can mix BF16 activations with FP32
+    # weights unless processor calls run under CUDA BF16 autocast. Keeping the
+    # context here means the notebook cells can stay simple.
+    autocast_context = (
+        torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+        if torch.cuda.is_available()
+        else nullcontext()
+    )
+    with torch.inference_mode(), autocast_context:
+        state = processor.set_image(image)
+        output = processor.set_text_prompt(state=state, prompt=prompt)
 
     def _tolist(value):
         if hasattr(value, "detach"):
