@@ -1986,6 +1986,9 @@ When live SAM3 is unavailable, only cached image/prompt pairs can return masks. 
         ),
         code(
             r"""
+from scripts.tutorial_sam3 import resolve_sam3_image_path
+
+
 def try_sam3_prompt(image_id_or_path, prompt, confidence_threshold=0.5):
     '''Run or load SAM3-style text-prompt segmentation for one image.'''
 
