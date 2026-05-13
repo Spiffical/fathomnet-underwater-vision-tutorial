@@ -561,6 +561,25 @@ plt.show()
         ),
         md(
             r"""
+### Train, Validation, And Test Splits
+
+Before trusting any training metric, decide which examples the model is allowed to learn from and which examples are held out. Most supervised machine-learning workflows use three roles:
+
+- **Training set:** examples used to update model parameters by gradient descent.
+- **Validation set:** examples used during development to choose hyperparameters, tune thresholds, compare runs, and select the best checkpoint.
+- **Test set:** examples held back until the end for a final estimate of performance on data you did not optimise against.
+
+In symbols, training chooses parameters
+
+$$\hat{\theta}=\arg\min_\theta \frac{1}{n_{\mathrm{train}}}\sum_{i\in \mathrm{train}}\ell(f_\theta(x_i),y_i),$$
+
+while validation estimates whether those parameters are useful away from the data that supplied the gradients. Ultralytics saves `weights/best.pt` as the checkpoint that performs best on the validation set during training. That is usually the checkpoint you evaluate or fine-tune from next, while `weights/last.pt` is simply the final epoch.
+
+This compact tutorial bundle uses train/validation splits for live exercises. In a real project, keep a separate test split untouched until your modelling choices are fixed. The next exercise audits the detection split before you trust its mAP.
+"""
+        ),
+        md(
+            r"""
 ### Advanced Exercise: Audit The Train/Validation Split
 
 A validation metric is only useful if the validation split is independent and reasonably representative. In this exercise, audit the YOLO detection split before trusting its mAP.
@@ -632,44 +651,11 @@ Advanced:
             r"""
 # Part 1: Classification From Organism Crops
 
-Classification means predicting one label for an input. This is the easiest entry point because each organism crop has one label and no geometric target. The crop labels in this bundle are common FathomNet source concepts, so there are enough classes for top-5 accuracy to be meaningful instead of automatically perfect.
+Classification means predicting one label for an input image. In this section, the input is an organism crop and the output is one FathomNet source concept such as a fish, sponge, or echinoderm label. There is no box and no mask yet; the model only has to answer "which class best explains this crop?"
 
-Here the image crop is a tensor
-
-$$x \in [0,1]^{H \times W \times 3},$$
-
-and the model produces one score, or logit, for each class. For `K` classes,
-
-$$z=f_\theta(x)\in \mathbb{R}^K,\qquad y\in\{1,\dots,K\}.$$
-
-The softmax turns logits into class probabilities,
-
-$$p_k=\frac{\exp(z_k)}{\sum_j \exp(z_j)},$$
-
-and cross-entropy penalizes the model when it gives low probability to the true class:
-
-$$\ell(z,y)=-\log p_y.$$
+This is the simplest modelling task in the notebook, but it still contains the main workflow you will reuse later: inspect the inputs, choose a pretrained starting point, train for a small number of epochs, compare training and validation curves, and look for specific errors rather than trusting one headline number.
 
 The live exercise is to change one training knob, rerun the small model, and interpret whether validation accuracy moved in a meaningful direction.
-"""
-        ),
-        md(
-            r"""
-### Train, Validation, And Test Splits
-
-Before training, define the data splits. Most supervised machine-learning workflows keep separate sets:
-
-- **Training set:** examples used to update model parameters by gradient descent.
-- **Validation set:** examples used during development to choose hyperparameters, compare runs, tune thresholds, and select the best checkpoint.
-- **Test set:** examples held back until the end for a final estimate of performance on data you did not optimise against.
-
-In symbols, training chooses parameters
-
-$$\hat{\theta}=\arg\min_\theta \frac{1}{n_{\mathrm{train}}}\sum_{i\in \mathrm{train}}\ell(f_\theta(x_i),y_i),$$
-
-while validation estimates whether those parameters are useful away from the data that supplied the gradients. Ultralytics saves `weights/best.pt` as the checkpoint that performs best on the validation set during training. That is usually the checkpoint you evaluate or fine-tune from next, while `weights/last.pt` is simply the final epoch.
-
-This compact tutorial bundle uses train/validation splits for live exercises. In a real project, keep a separate test split untouched until your modelling choices are fixed.
 """
         ),
         md(
@@ -706,7 +692,23 @@ show_image_grid(class_examples, titles=class_titles, columns=4)
             r"""
 ### Visible Helper: Cross-Entropy
 
-This is a small, editable version of the loss behind multi-class classification. It is not meant to replace PyTorch; it is here so the math is visible.
+For a crop image represented as
+
+$$x \in [0,1]^{H \times W \times 3},$$
+
+the classifier produces one score, or **logit**, for each of `K` classes:
+
+$$z=f_\theta(x)\in \mathbb{R}^K,\qquad y\in\{0,\dots,K-1\}.$$
+
+The softmax function turns logits into class probabilities:
+
+$$p_k=\frac{\exp(z_k)}{\sum_j \exp(z_j)}.$$
+
+Cross-entropy penalises the model when it assigns low probability to the true class:
+
+$$\ell(z,y)=-\log p_y.$$
+
+This small, editable helper computes that loss directly. It is not meant to replace PyTorch; it is here so the math and the numerical-stability trick are visible before you train a real model.
 """
         ),
         code(
@@ -730,67 +732,19 @@ print("loss if the true class is index 1:", softmax_cross_entropy_from_logits(ex
         ),
         md(
             r"""
-### Visible Helper: Training Arguments
-
-You are encouraged to edit this function before running a training cell. It is deliberately small: the goal is to connect a few knobs to training behaviour.
-"""
-        ),
-        code(
-            r"""
-def build_train_args(
-    *,
-    n_epochs=10,
-    imgsz=320,
-    batch=8,
-    lr0=0.001,
-    optimizer="AdamW",
-    patience=3,
-    workers=0,
-    project="runs/tutorial",
-    name="experiment",
-    seed=42,
-):
-    '''Collect the main training hyperparameters in one visible place.
-
-    Think of this as choosing an optimiser trajectory through parameter space:
-
-        theta_{t+1} = theta_t - eta * grad L(theta_t)
-
-    where `lr0` controls the initial step size eta, `batch` controls how noisy
-    the gradient estimate is, and `n_epochs` controls how many passes you make
-    through the finite training sample. The optimiser is explicit so Ultralytics
-    uses the learning rate you choose instead of replacing it with an automatic
-    choice.
-
-    Ultralytics expects this argument to be named `epochs`, so the returned
-    dictionary maps the classroom-facing `n_epochs` name to `epochs`.
-    '''
-
-    return {
-        "epochs": int(n_epochs),
-        "imgsz": int(imgsz),
-        "batch": int(batch),
-        "lr0": float(lr0),
-        "optimizer": str(optimizer),
-        "patience": int(patience),
-        "workers": int(workers),
-        "project": str(project),
-        "name": str(name),
-        "seed": int(seed),
-        # Keep checkpoint saving explicit. Ultralytics writes weights/best.pt
-        # for the validation-best checkpoint and weights/last.pt for the final epoch.
-        "save": True,
-        "verbose": False,
-    }
-"""
-        ),
-        md(
-            r"""
 ### Train Or Load A Small Classification Run
 
-Now move from the hand-computed loss to an actual model. This cell trains `yolo11n-cls.pt` when a GPU is available. If not, it loads the cached classification curve so the interpretation exercise still works.
+Now train an actual model. This cell trains `yolo11n-cls.pt` when a GPU is available. If not, it loads the cached classification curve so the interpretation exercise still works.
 
-Focus on the training arguments: `n_epochs`, `imgsz`, `batch`, `optimizer`, and `lr0`. Those are the knobs you will modify in the exercises. When live training runs, Ultralytics saves the validation-best checkpoint at `weights/best.pt`.
+Focus on the training arguments below. The utility function `build_train_args(...)` lives in `scripts/tutorial_setup.py`; here you only change the values you pass to it.
+
+- `n_epochs`: passes through the training set; common workshop values are `5` to `20`.
+- `imgsz`: resized input image size; `224` is common for classification, while detection often uses `320` or `640`.
+- `batch`: images per gradient update; larger batches are smoother but use more GPU memory.
+- `lr0`: initial learning rate; useful trial values are often `1e-4`, `1e-3`, and `1e-2`.
+- `optimizer`: update rule; this notebook uses `AdamW`, while `SGD` and Ultralytics' `auto` setting are common alternatives.
+- `patience`: early-stopping window measured in epochs with no validation improvement.
+- `project` and `name`: where Ultralytics writes plots, logs, and `weights/best.pt`.
 
 The first plot compares training loss with validation loss. Training loss is computed on examples that supply gradients; validation loss is computed on held-out examples. If training loss keeps improving while validation loss gets worse, you are seeing overfitting.
 
@@ -800,11 +754,15 @@ The second plot reports validation top-1 and top-5 accuracy when those columns a
         code(
             r"""
 CLASSIFY_N_EPOCHS = 10
+# Change the values in this call for the live exercise. The helper converts
+# these classroom-facing names into the argument names Ultralytics expects.
 CLASSIFY_ARGS = build_train_args(
     n_epochs=CLASSIFY_N_EPOCHS,
     imgsz=224,
     batch=16,
     lr0=0.001,
+    optimizer="AdamW",
+    patience=3,
     project=REPO_ROOT / "runs" / "classification",
     name="classification_default",
 )

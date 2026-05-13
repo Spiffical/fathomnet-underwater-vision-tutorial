@@ -245,7 +245,12 @@ def default_train_args(
     name: str = "experiment",
     seed: int = 42,
 ) -> dict[str, object]:
-    """Return the compact training-argument dictionary used by skip-ahead cells."""
+    """Return the compact training-argument dictionary used by notebook cells.
+
+    The notebook exposes the values passed into this helper instead of the
+    helper body itself. That keeps the notebook focused on the modelling knobs:
+    `n_epochs`, `imgsz`, `batch`, `lr0`, `optimizer`, and `patience`.
+    """
 
     return {
         "epochs": int(n_epochs),
