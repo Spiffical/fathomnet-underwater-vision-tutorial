@@ -160,6 +160,30 @@ def available_cached_prompts(bundle_root: str | Path, image_id: str | None = Non
     }
 
 
+def resolve_sam3_image_path(bundle_root: str | Path, image_id_or_path: str | Path) -> Path:
+    """Resolve a cached SAM3 image id or a direct local image path.
+
+    Live SAM3 can run on arbitrary local images. Cached fallback outputs are
+    only available for the small set of image ids listed in `index.json`, but
+    this resolver lets the notebook use one simple variable for both modes.
+    """
+
+    candidate = Path(image_id_or_path).expanduser()
+    if candidate.exists():
+        return candidate.resolve()
+
+    root = Path(bundle_root)
+    image_key = str(image_id_or_path)
+    index = _load_index(root)
+    image_entry = index.get("images", {}).get(image_key)
+    if image_entry is not None:
+        return (root / image_entry["image"]).resolve()
+
+    raise ValueError(
+        f"Could not resolve {image_id_or_path!r} as a local image path or cached SAM3 image id."
+    )
+
+
 def load_cached_sam3_result(
     bundle_root: str | Path,
     image_id: str,

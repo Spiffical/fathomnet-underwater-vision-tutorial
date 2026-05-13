@@ -428,6 +428,7 @@ def bootstrap_section(section: str, namespace: dict[str, object] | None = None) 
             configure_huggingface_token,
             install_sam3_package,
             load_cached_sam3_result,
+            resolve_sam3_image_path,
             run_sam3_text_prompt,
             sam3_can_run_live,
         )
@@ -441,6 +442,7 @@ def bootstrap_section(section: str, namespace: dict[str, object] | None = None) 
                 "configure_huggingface_token": configure_huggingface_token,
                 "install_sam3_package": install_sam3_package,
                 "load_cached_sam3_result": load_cached_sam3_result,
+                "resolve_sam3_image_path": resolve_sam3_image_path,
                 "run_sam3_text_prompt": run_sam3_text_prompt,
                 "sam3_can_run_live": sam3_can_run_live,
                 "plot_sam3_result": plot_sam3_result,

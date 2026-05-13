@@ -1974,16 +1974,23 @@ if not USE_LIVE_SAM3:
             r"""
 ### Visible Helper: Try A SAM3 Prompt
 
-Edit `prompt` and `confidence_threshold`. The same function works with cached fallback outputs or live SAM3.
+Edit `image_id_or_path`, `prompt`, and `confidence_threshold`.
+
+When `USE_LIVE_SAM3` is `True`, this helper accepts any prompt and either:
+
+- a cached image id, such as `SAM3_IMAGE_ID`;
+- a direct local image path, such as `"/content/my_underwater_image.jpg"`.
+
+When live SAM3 is unavailable, only cached image/prompt pairs can return masks. Unknown cached prompts no longer crash the notebook; they return an empty result and print the available cached prompts.
 """
         ),
         code(
             r"""
-def try_sam3_prompt(image_id, prompt, confidence_threshold=0.5):
+def try_sam3_prompt(image_id_or_path, prompt, confidence_threshold=0.5):
     '''Run or load SAM3-style text-prompt segmentation for one image.'''
 
-    cached = load_cached_sam3_result(BUNDLE_ROOT, image_id=image_id, prompt=prompt)
-    image_path = cached["image_path"]
+    image_path = resolve_sam3_image_path(BUNDLE_ROOT, image_id_or_path)
+    live_error = None
 
     if USE_LIVE_SAM3:
         try:
@@ -1992,29 +1999,54 @@ def try_sam3_prompt(image_id, prompt, confidence_threshold=0.5):
                 prompt,
                 confidence_threshold=confidence_threshold,
             )
-            live["image_path"] = image_path
+            live["image_path"] = str(image_path)
             return live
         except RuntimeError as exc:
             print("Live SAM3 failed, so this cell is using the cached output instead.")
             print(type(exc).__name__, exc)
-            cached["source"] = "cached_after_live_sam3_error"
-            cached["live_error"] = f"{type(exc).__name__}: {exc}"
+            live_error = f"{type(exc).__name__}: {exc}"
 
-    cached["confidence_threshold"] = confidence_threshold
-    return cached
+    try:
+        cached = load_cached_sam3_result(BUNDLE_ROOT, image_id=str(image_id_or_path), prompt=prompt)
+        if live_error is not None:
+            cached["source"] = "cached_after_live_sam3_error"
+            cached["live_error"] = live_error
+        cached["confidence_threshold"] = confidence_threshold
+        return cached
+    except KeyError:
+        available = available_cached_prompts(BUNDLE_ROOT, image_id=str(image_id_or_path)).get(str(image_id_or_path), [])
+        print(f"No cached SAM3 output for prompt {prompt!r} on image {image_id_or_path!r}.")
+        if available:
+            print("Cached prompts for this image:", available)
+        if not USE_LIVE_SAM3:
+            print("Set up live SAM3 to try arbitrary prompts or arbitrary local images.")
+
+    return {
+        "prompt": prompt,
+        "image_path": str(image_path),
+        "boxes": [],
+        "scores": [],
+        "masks": [],
+        "polygons": [],
+        "source": "no_cached_result",
+        "available_cached_prompts": available if "available" in locals() else [],
+        "confidence_threshold": confidence_threshold,
+        "live_error": live_error,
+    }
 
 
 cached_prompt_table = available_cached_prompts(BUNDLE_ROOT)
 SAM3_IMAGE_ID = next(iter(cached_prompt_table))
+SAM3_IMAGE_OR_PATH = SAM3_IMAGE_ID
 PROMPT = "marine organism"
 CONFIDENCE_THRESHOLD = 0.5
 
-sam3_result = try_sam3_prompt(SAM3_IMAGE_ID, PROMPT, CONFIDENCE_THRESHOLD)
+sam3_result = try_sam3_prompt(SAM3_IMAGE_OR_PATH, PROMPT, CONFIDENCE_THRESHOLD)
 plot_sam3_result(
     sam3_result["image_path"],
     sam3_result,
     score_threshold=CONFIDENCE_THRESHOLD,
-    title=f"{SAM3_IMAGE_ID}: {PROMPT}",
+    title=f"{SAM3_IMAGE_OR_PATH}: {PROMPT}",
 )
 """
         ),
@@ -2022,14 +2054,23 @@ plot_sam3_result(
             r"""
 ### Compare Several Prompts
 
-After one prompt works, try several prompts on the same cached image. This cell does not train anything; it only changes the text query and reports how many masks were returned for each concept.
+After one prompt works, try several prompts on the same image. This cell does not train anything; it only changes the text query and reports how many masks were returned for each concept.
+
+If live SAM3 is ready, add any new phrase to `PROMPTS_TO_TRY`, for example `"small creature"`. If live SAM3 is not ready, prompts outside the cached table will report zero detections and remind you which cached prompts exist.
+
+To try a new image with live SAM3, set `SAM3_IMAGE_OR_PATH` to a local image path:
+
+```python
+SAM3_IMAGE_OR_PATH = "/content/my_underwater_image.jpg"
+```
 """
         ),
         code(
             r"""
-# Try several prompts on the same image. Some may correctly return nothing.
-for prompt in ["fish", "sponge", "gelatinous animal", "small crab", "echinoderm"]:
-    result = try_sam3_prompt(SAM3_IMAGE_ID, prompt, confidence_threshold=0.5)
+PROMPTS_TO_TRY = ["fish", "sponge", "gelatinous animal", "small crab", "echinoderm", "small creature"]
+
+for prompt in PROMPTS_TO_TRY:
+    result = try_sam3_prompt(SAM3_IMAGE_OR_PATH, prompt, confidence_threshold=0.5)
     print(prompt, "detections:", len(result.get("boxes", [])), "source:", result.get("source"))
 """
         ),
