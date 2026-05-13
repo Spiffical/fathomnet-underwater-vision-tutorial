@@ -111,7 +111,7 @@ def prediction_count_at_threshold(
     repo_root: str | Path,
     imgsz: int = 320,
 ) -> dict[str, object]:
-    """Run YOLO prediction on one image and summarize detections at a threshold."""
+    """Run YOLO prediction on one image and summarise detections at a threshold."""
 
     model = _load_yolo(model_or_path)
     result = model.predict(

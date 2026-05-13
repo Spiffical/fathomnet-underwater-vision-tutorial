@@ -89,7 +89,7 @@ def _run_text(command: list[str], timeout: int = 10) -> str | None:
 
 
 def detect_runtime() -> dict[str, object]:
-    """Summarize the active notebook/runtime environment."""
+    """Summarise the active notebook/runtime environment."""
 
     in_colab = "google.colab" in sys.modules
     payload: dict[str, object] = {

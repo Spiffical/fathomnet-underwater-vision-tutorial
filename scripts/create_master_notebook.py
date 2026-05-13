@@ -92,7 +92,7 @@ def fill_code_answers(notebook: dict) -> None:
         '''def coco_bbox_to_yolo_exercise(coco_bbox, image_width, image_height):
     ''' + "'''" + '''Convert one COCO [x_min, y_min, width, height] box to YOLO geometry.
 
-    Return `(center_x, center_y, width, height)`, normalized by image size.
+    Return `(center_x, center_y, width, height)`, normalised by image size.
     Leave the return value as `None` until you are ready to test your answer.
     ''' + "'''" + '''
 
@@ -102,7 +102,7 @@ def fill_code_answers(notebook: dict) -> None:
         '''def coco_bbox_to_yolo_exercise(coco_bbox, image_width, image_height):
     ''' + "'''" + '''Convert one COCO [x_min, y_min, width, height] box to YOLO geometry.
 
-    Return `(center_x, center_y, width, height)`, normalized by image size.
+    Return `(center_x, center_y, width, height)`, normalised by image size.
     ''' + "'''" + '''
 
     x_min, y_min, box_width, box_height = coco_bbox
@@ -309,7 +309,7 @@ else:
         "def yolo_polygon_row_to_mask(row, image_width, image_height):",
         r'''
 def yolo_polygon_row_to_mask(row, image_width, image_height):
-    """Rasterize one YOLO segmentation polygon row into a binary mask."""
+    """Rasterise one YOLO segmentation polygon row into a binary mask."""
 
     import numpy as np
     from PIL import Image, ImageDraw
@@ -344,7 +344,7 @@ print("mask shape:", candidate_mask.shape, "mask pixels:", int(candidate_mask.su
 plt.figure(figsize=(6, 4))
 plt.imshow(candidate_mask, cmap="gray")
 plt.axis("off")
-plt.title("Rasterized YOLO polygon")
+plt.title("Rasterised YOLO polygon")
 plt.show()
 ''',
     )
@@ -515,8 +515,8 @@ For a three-hour live session, a reasonable pacing target is:
 ### Master Notes: First Look
 
 - Let participants look before naming every task. Good early prompts are: "What is easy to see?", "What is small?", and "What would be hard to annotate consistently?"
-- This section intentionally uses full images before crops, boxes, or masks so the modeling choices feel motivated by the visual problem.
-- If a participant says the image has many unlabeled things, that is a useful opening for incomplete labels and distribution shift.
+- This section intentionally uses full images before crops, boxes, or masks so the modelling choices feel motivated by the visual problem.
+- If a participant says the image has many unlabelled things, that is a useful opening for incomplete labels and distribution shift.
 """
         ),
     )
@@ -547,7 +547,7 @@ For a three-hour live session, a reasonable pacing target is:
 - The visual views are intentionally distinct: full images with category labels show "what is present," classification crops show one source-level concept label per crop, detection labels show multiple boxes per full image, and segmentation labels show multiple object-shaped regions per full image.
 - Keep this section about truth labels only. Save model predictions for the YOLO warm-up and training/evaluation sections.
 - Collapsing many categories into `object` removes biological identity, taxonomy, and ecological meaning, but makes a short detection exercise easier and more stable.
-- Restoring tiny boxes would push the area histogram left, increase the number of labels per image, and likely lower short-run mAP for a small model because localization becomes much harder.
+- Restoring tiny boxes would push the area histogram left, increase the number of labels per image, and likely lower short-run mAP for a small model because localisation becomes much harder.
 - The COCO subset is useful for reasoning about categories and conversion; the prepared YOLO folders are useful for short live training.
 """
         ),
@@ -569,15 +569,15 @@ For a three-hour live session, a reasonable pacing target is:
 
     insert_after_heading(
         notebook,
-        "### Mini-Lab: Learning Rate As An Optimization Knob",
+        "### Mini-Lab: Learning Rate As An Optimisation Knob",
         md(
             r"""
 ### Master Notes: Learning Rate Lab
 
 - `1e-4` is likely to look slow in a one-epoch or two-epoch workshop run.
 - `1e-3` is a reasonable default for this tiny classification fine-tuning exercise.
-- `1e-2` may improve quickly or become unstable, depending on batch order and initialization.
-- The teaching point is not that one run proves the best learning rate. It is that optimization behavior is visible in curves, and validation accuracy is a noisy estimate on this small split.
+- `1e-2` may improve quickly or become unstable, depending on batch order and initialisation.
+- The teaching point is not that one run proves the best learning rate. It is that optimisation behaviour is visible in curves, and validation accuracy is a noisy estimate on this small split.
 """
         ),
     )
@@ -636,7 +636,7 @@ For a three-hour live session, a reasonable pacing target is:
 
 - This should be framed as an advanced optional path. The checkpoint is much larger than `yolo11n.pt`, and YOLOv8x fine-tuning can be slow on small GPUs.
 - The useful comparison is not only metric-vs-metric. Ask whether Megalodon finds underwater object-like regions that generic COCO weights miss.
-- Keep `n_epochs` modest at first. The first fine-tuning question is whether the run is wired correctly and whether early validation behavior looks plausible.
+- Keep `n_epochs` modest at first. The first fine-tuning question is whether the run is wired correctly and whether early validation behaviour looks plausible.
 - Because Megalodon is already a one-class FathomNet detector, it is a good match for the tutorial's binary `object` labels.
 - The participant notebook intentionally gives hints rather than complete code here. For a quick solution, use `hf_hub_download(...)`, then `YOLO(str(path)).predict(...)`, then `YOLO(str(path)).train(data=str(DETECT_YAML), ...)`.
 """
@@ -653,7 +653,7 @@ For a three-hour live session, a reasonable pacing target is:
 - The most productive discussion is usually not "the model is bad," but "which failure mode is dominant?"
 - Missed small objects suggest resolution, label filtering, or data quantity issues.
 - Object-like background false positives suggest thresholding, hard-negative examples, or stronger domain-specific pretraining.
-- Poor localization suggests label geometry, image size, or training duration.
+- Poor localisation suggests label geometry, image size, or training duration.
 """
         ),
     )
@@ -698,7 +698,7 @@ For a three-hour live session, a reasonable pacing target is:
 - COCO `[x_min, y_min, width, height]` maps to YOLO `(x_min + width/2)/W`, `(y_min + height/2)/H`, `width/W`, `height/H`.
 - A more conservative confidence threshold usually raises precision and lowers recall.
 - Raising `imgsz` can help small objects because the resized image preserves more spatial detail, but it costs more memory and time.
-- A whole-file COCO converter needs to group annotations by image, map category ids to contiguous YOLO class ids, normalize geometry by each image size, skip invalid boxes, and write one `.txt` label file per image.
+- A whole-file COCO converter needs to group annotations by image, map category ids to contiguous YOLO class ids, normalise geometry by each image size, skip invalid boxes, and write one `.txt` label file per image.
 """
         ),
     )
@@ -712,7 +712,7 @@ For a three-hour live session, a reasonable pacing target is:
 
 - YOLO segmentation requires at least three `(x, y)` polygon points per object.
 - Box mAP can be higher than mask mAP because a predicted rectangle can be acceptable even when the boundary shape is poor.
-- COCO polygon coordinates are normalized pairwise: `x/W`, `y/H`, preceded by the YOLO class id.
+- COCO polygon coordinates are normalised pairwise: `x/W`, `y/H`, preceded by the YOLO class id.
 - Dropping tiny polygons often improves short workshop metrics by reducing ambiguous labels, but it can reduce ecological recall for small organisms.
 - Binary object segmentation is useful as a stepping stone and for generic saliency, but it is less scientifically expressive than taxonomic or functional-group labels.
 """
@@ -721,7 +721,7 @@ For a three-hour live session, a reasonable pacing target is:
 
     insert_after_heading(
         notebook,
-        "### Advanced Exercise: Rasterize A YOLO Polygon",
+        "### Advanced Exercise: Rasterise A YOLO Polygon",
         md(
             r"""
 ### Master Notes: Rasterization
@@ -755,7 +755,7 @@ For a three-hour live session, a reasonable pacing target is:
             r"""
 ### Master Notes: SAM3 Pseudo-Labels
 
-- The cached polygons are normalized, so the conversion to YOLO rows is mostly filtering and flattening.
+- The cached polygons are normalised, so the conversion to YOLO rows is mostly filtering and flattening.
 - The hard part is not the file format; it is deciding whether prompt-generated labels are trustworthy enough to train on.
 - Good discussion prompt: which pseudo-label errors would a supervised model amplify?
 """

@@ -93,10 +93,10 @@ def classification_examples_by_class(
     examples_per_class: int = 1,
     max_classes: int | None = None,
 ) -> list[dict[str, object]]:
-    """Select labeled classification images from an ImageFolder-style split.
+    """Select labelled classification images from an ImageFolder-style split.
 
     Each returned item has an `image_path` and `class_name`. The helper keeps
-    the notebook focused on the modeling question: here the target is one class
+    the notebook focused on the modelling question: here the target is one class
     label per image, with no boxes or masks.
     """
 
@@ -140,7 +140,7 @@ def select_yolo_examples(
     min_instances: int = 2,
     limit: int = 4,
 ) -> list[dict[str, object]]:
-    """Select YOLO examples with several labeled objects in one image.
+    """Select YOLO examples with several labelled objects in one image.
 
     Multi-object examples are useful early in the tutorial because they make
     the distinction between image classification, object detection, and
@@ -309,7 +309,7 @@ def validate_yolo_dataset(dataset_yaml: str | Path, *, task: str = "detect") -> 
 
 
 def summarize_dataset(bundle_root: str | Path) -> dict[str, object]:
-    """Summarize all major bundle components."""
+    """Summarise all major bundle components."""
 
     root = Path(bundle_root)
     return {
@@ -330,7 +330,7 @@ def make_tiny_detection_dataset(
     """Copy a tiny YOLO detection dataset for quick overfit/debugging labs.
 
     The tiny dataset is intentionally created under `tmp/` by the notebook. It
-    should not be committed; it is a disposable local teaching artifact.
+    should not be committed; it is a disposable local teaching artefact.
     """
 
     source_root = Path(source_root)

@@ -1,4 +1,4 @@
-"""Visualization helpers for the underwater vision tutorial."""
+"""Visualisation helpers for the underwater vision tutorial."""
 
 from __future__ import annotations
 

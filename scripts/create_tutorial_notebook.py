@@ -67,11 +67,11 @@ What you will do:
 - **Dataset exploration:** inspect the same imagery through different label views: image-level crop classes, bounding boxes, and segmentation polygons.
 - **Pretrained YOLO warmup:** use an existing YOLO model before training anything, so prediction outputs and confidence scores have a concrete meaning.
 - **Classification:** train a small crop classifier and connect softmax, cross-entropy, learning rate, and confusion matrices to the observed results.
-- **Object detection:** fine-tune YOLO on binary organism boxes and study box parameterization, intersection over union (IoU), precision, recall, and mean average precision (mAP).
+- **Object detection:** fine-tune YOLO on binary organism boxes and study box parameterisation, intersection over union (IoU), precision, recall, and mean average precision (mAP).
 - **Instance segmentation:** fine-tune YOLO segmentation on binary masks and compare box-level and mask-level evaluation.
 - **SAM3 promptable segmentation:** use text prompts such as `"fish"` or `"small crab"` to request masks, boxes, and scores, with cached outputs available for every runtime.
 
-The default notebook behavior is:
+The default notebook behaviour is:
 
 - use a prebuilt compact data bundle,
 - run live YOLO training only when a GPU is available,
@@ -80,7 +80,7 @@ The default notebook behavior is:
 Vocabulary you will see:
 
 - **YOLO** means "You Only Look Once"; in this notebook it refers to Ultralytics YOLO models for classification, detection, and segmentation.
-- A **bounding box** is a rectangle around an object, usually represented by center point, width, and height.
+- A **bounding box** is a rectangle around an object, usually represented by centre point, width, and height.
 - **Segmentation** means predicting pixels or regions, not just a class or rectangle.
 - **Instance segmentation** means predicting a separate mask for each object instance.
 - **COCO** means "Common Objects in Context"; here it mostly refers to a widely used JSON annotation format for images, categories, bounding boxes, and segmentations.
@@ -409,7 +409,7 @@ show_image_grid(
             r"""
 ### View 2: Classification Crops With Truth Labels
 
-The training classifier uses organism crops grouped by source-level FathomNet concept labels. Each crop has one truth label from the folder name. There is still no geometry target here: no center point, no bounding box, no polygon.
+The training classifier uses organism crops grouped by source-level FathomNet concept labels. Each crop has one truth label from the folder name. There is still no geometry target here: no centre point, no bounding box, no polygon.
 """
         ),
         code(
@@ -436,7 +436,7 @@ Object detection asks for a class and a rectangle for each object. The YOLO dete
 
 `class_id x_center y_center width height`
 
-where the four geometry values are normalized to `[0, 1]` by the image width and height. The examples below are selected because they contain multiple labeled objects.
+where the four geometry values are normalised to `[0, 1]` by the image width and height. The examples below are selected because they contain multiple labelled objects.
 """
         ),
         code(
@@ -464,7 +464,7 @@ plt.show()
             r"""
 ### View 4: YOLO Instance Segmentation Truth Labels
 
-Instance segmentation asks for a separate region for each object. In YOLO segmentation format, each row starts with the class id and is followed by normalized polygon coordinates:
+Instance segmentation asks for a separate region for each object. In YOLO segmentation format, each row starts with the class id and is followed by normalised polygon coordinates:
 
 `class_id x1 y1 x2 y2 ... xK yK`
 
@@ -494,7 +494,7 @@ plt.show()
             r"""
 ### Annotation Counts And Category Mix
 
-You have now seen the truth labels visually. The next two cells summarize the same bundle numerically: first the COCO-style categories and annotation counts, then the object-size distribution used by the YOLO detection labels.
+You have now seen the truth labels visually. The next two cells summarise the same bundle numerically: first the COCO-style categories and annotation counts, then the object-size distribution used by the YOLO detection labels.
 """
         ),
         code(
@@ -521,9 +521,9 @@ print(f"  min={min(annotations_by_image.values())}, max={max(annotations_by_imag
             r"""
 ### Object Size Distribution
 
-This histogram shows how large the detection boxes are as a fraction of image area. It matters because tiny objects are harder to localize, and the tutorial labels intentionally filter out extremely tiny boxes for the live training exercises.
+This histogram shows how large the detection boxes are as a fraction of image area. It matters because tiny objects are harder to localise, and the tutorial labels intentionally filter out extremely tiny boxes for the live training exercises.
 
-The bundle uses a normalized bounding-box area threshold of `0.005`: an object is kept only if its box covers at least `0.5%` of the image area. For segmentation labels, the same idea is applied to the bounding box around the polygon.
+The bundle uses a normalised bounding-box area threshold of `0.005`: an object is kept only if its box covers at least `0.5%` of the image area. For segmentation labels, the same idea is applied to the bounding box around the polygon.
 
 This is a teaching choice, not a scientific law. It makes short training runs easier to interpret because the labels focus on visible organisms. The tradeoff is that the live task becomes "find larger, visually salient objects," not "find every organism in the scene."
 """
@@ -552,7 +552,7 @@ print(f"box area fraction: min={min(box_area_fractions):.4f}, median={sorted(box
 
 plt.figure(figsize=(7, 3.5))
 plt.hist(box_area_fractions, bins=18, edgecolor="black")
-plt.xlabel("normalized box area")
+plt.xlabel("normalised box area")
 plt.ylabel("count")
 plt.title("Object sizes in the live YOLO detection labels")
 plt.grid(alpha=0.25)
@@ -576,8 +576,8 @@ Hints:
 
 - labels live under `labels/train` and `labels/val`;
 - image IDs can be compared by filename stem;
-- YOLO detection rows store normalized `width` and `height` in columns 4 and 5;
-- a suspicious audit result is a modeling problem, not just a data-loading problem.
+- YOLO detection rows store normalised `width` and `height` in columns 4 and 5;
+- a suspicious audit result is a modelling problem, not just a data-loading problem.
 """
         ),
         code(
@@ -586,7 +586,7 @@ def audit_yolo_split_exercise(dataset_root):
     '''Audit leakage and rough distribution shift for a YOLO detection dataset.
 
     Return a dictionary with split counts, overlap information, instance counts,
-    and median normalized box areas. Leave the return value as `None` until you
+    and median normalised box areas. Leave the return value as `None` until you
     are ready to implement the exercise.
     '''
 
@@ -661,7 +661,7 @@ Before training, define the data splits. Most supervised machine-learning workfl
 
 - **Training set:** examples used to update model parameters by gradient descent.
 - **Validation set:** examples used during development to choose hyperparameters, compare runs, tune thresholds, and select the best checkpoint.
-- **Test set:** examples held back until the end for a final estimate of performance on data you did not optimize against.
+- **Test set:** examples held back until the end for a final estimate of performance on data you did not optimise against.
 
 In symbols, training chooses parameters
 
@@ -669,7 +669,7 @@ $$\hat{\theta}=\arg\min_\theta \frac{1}{n_{\mathrm{train}}}\sum_{i\in \mathrm{tr
 
 while validation estimates whether those parameters are useful away from the data that supplied the gradients. Ultralytics saves `weights/best.pt` as the checkpoint that performs best on the validation set during training. That is usually the checkpoint you evaluate or fine-tune from next, while `weights/last.pt` is simply the final epoch.
 
-This compact tutorial bundle uses train/validation splits for live exercises. In a real project, keep a separate test split untouched until your modeling choices are fixed.
+This compact tutorial bundle uses train/validation splits for live exercises. In a real project, keep a separate test split untouched until your modelling choices are fixed.
 """
         ),
         md(
@@ -732,7 +732,7 @@ print("loss if the true class is index 1:", softmax_cross_entropy_from_logits(ex
             r"""
 ### Visible Helper: Training Arguments
 
-You are encouraged to edit this function before running a training cell. It is deliberately small: the goal is to connect a few knobs to training behavior.
+You are encouraged to edit this function before running a training cell. It is deliberately small: the goal is to connect a few knobs to training behaviour.
 """
         ),
         code(
@@ -752,13 +752,13 @@ def build_train_args(
 ):
     '''Collect the main training hyperparameters in one visible place.
 
-    Think of this as choosing an optimizer trajectory through parameter space:
+    Think of this as choosing an optimiser trajectory through parameter space:
 
         theta_{t+1} = theta_t - eta * grad L(theta_t)
 
     where `lr0` controls the initial step size eta, `batch` controls how noisy
     the gradient estimate is, and `n_epochs` controls how many passes you make
-    through the finite training sample. The optimizer is explicit so Ultralytics
+    through the finite training sample. The optimiser is explicit so Ultralytics
     uses the learning rate you choose instead of replacing it with an automatic
     choice.
 
@@ -858,15 +858,15 @@ plot_training_curves(
         ),
         md(
             r"""
-### Mini-Lab: Learning Rate As An Optimization Knob
+### Mini-Lab: Learning Rate As An Optimisation Knob
 
-The learning rate controls the scale of each gradient step. In a small workshop run, you usually cannot prove one setting is globally best. You can still learn to recognize three useful patterns:
+The learning rate controls the scale of each gradient step. In a small workshop run, you usually cannot prove one setting is globally best. You can still learn to recognise three useful patterns:
 
 - too small: the curve barely moves;
 - useful: validation accuracy improves without wild instability;
 - too large: loss or validation accuracy jumps around or degrades.
 
-Try one or more learning rates from `lr0 = 1e-4`, `1e-3`, and `1e-2`. The default mini-lab uses several epochs because one epoch is often too short to reveal the difference between slow, useful, and unstable optimization. The cached curves give you a baseline comparison, and a live GPU run lets you see how much the result changes from one run to the next.
+Try one or more learning rates from `lr0 = 1e-4`, `1e-3`, and `1e-2`. The default mini-lab uses several epochs because one epoch is often too short to reveal the difference between slow, useful, and unstable optimisation. The cached curves give you a baseline comparison, and a live GPU run lets you see how much the result changes from one run to the next.
 
 This mini-lab plots validation accuracy only so the comparison across learning rates stays uncluttered. In other cells, `plot_training_curves(..., include_training=True)` can add matching training curves for train/validation loss comparisons.
 """
@@ -922,7 +922,7 @@ toy_confusion = [
     [0, 0, 0, 1, 6, 1],
     [1, 0, 0, 0, 1, 5],
 ]
-plot_confusion_matrix(toy_confusion, classes, normalize=True, title="Discussion matrix: normalized by true class")
+plot_confusion_matrix(toy_confusion, classes, normalize=True, title="Discussion matrix: normalised by true class")
 """
         ),
         md(
@@ -995,7 +995,7 @@ Intermediate:
 
 Advanced:
 
-- Design a fair pretrained-vs-random-initialization comparison. What would you keep fixed?
+- Design a fair pretrained-vs-random-initialisation comparison. What would you keep fixed?
 - Complete `build_confusion_matrix_from_predictions(...)` and replace the toy matrix with predictions from your live model.
 - Which two classes are most confusable, and what visual ambiguity might explain it?
 - Propose a better class grouping for this small crop dataset.
@@ -1011,7 +1011,7 @@ Instead of one label per crop, the output is a set of boxes:
 
 $$\{(c_i,b_i,s_i)\}_{i=1}^m,\qquad b_i=(c_x,c_y,w,h).$$
 
-Here `c_i` is the class, `b_i` is a normalized box, and `s_i` is the confidence score. YOLO stores `c_x`, `c_y`, `w`, and `h` in `[0,1]` relative to image width and height.
+Here `c_i` is the class, `b_i` is a normalised box, and `s_i` is the confidence score. YOLO stores `c_x`, `c_y`, `w`, and `h` in `[0,1]` relative to image width and height.
 
 The workshop bundle uses a binary **object** target and filters very small boxes. This makes the first detector behave like a useful mathematical object during a short tutorial: you can see IoU, confidence thresholds, precision, recall, and AP move for interpretable reasons.
 
@@ -1031,7 +1031,7 @@ Precision and recall depend on a confidence threshold:
 
 $$\mathrm{precision}=\frac{TP}{TP+FP}, \qquad \mathrm{recall}=\frac{TP}{TP+FN}.$$
 
-Average precision, or **AP**, summarizes the precision-recall curve as that threshold changes. **mAP** means mean average precision. In YOLO reports, `mAP50` uses an IoU threshold of `0.50`, while `mAP50-95` averages over several IoU thresholds from `0.50` to `0.95`, making it a stricter localization metric.
+Average precision, or **AP**, summarises the precision-recall curve as that threshold changes. **mAP** means mean average precision. In YOLO reports, `mAP50` uses an IoU threshold of `0.50`, while `mAP50-95` averages over several IoU thresholds from `0.50` to `0.95`, making it a stricter localisation metric.
 """
         ),
         md(
@@ -1125,9 +1125,9 @@ The toy example above shows the metric logic. Now switch to the real YOLO detect
             r"""
 ### Detection Truth Example: Several Objects In One Image
 
-This plot shows one validation image from the YOLO detection dataset. The green rectangles are **ground-truth labels**, not model predictions. Each row in the matching `.txt` label file says: class id, normalized box center, normalized box width, and normalized box height.
+This plot shows one validation image from the YOLO detection dataset. The green rectangles are **ground-truth labels**, not model predictions. Each row in the matching `.txt` label file says: class id, normalised box centre, normalised box width, and normalised box height.
 
-The example is selected to contain multiple labeled objects so the detection task is visually clear.
+The example is selected to contain multiple labelled objects so the detection task is visually clear.
 """
         ),
         code(
@@ -1269,7 +1269,7 @@ except Exception as exc:
             r"""
 ### Mini-Lab: Overfit A Tiny Dataset
 
-A powerful debugging move is to ask whether the model can memorize a tiny training set. If it cannot overfit 8-12 examples, something may be wrong with the labels, model wiring, optimization settings, or data path.
+A powerful debugging move is to ask whether the model can memorise a tiny training set. If it cannot overfit 8-12 examples, something may be wrong with the labels, model wiring, optimisation settings, or data path.
 
 This cell prepares the tiny dataset for you. Training is off by default because it is a live GPU exercise.
 """
@@ -1319,7 +1319,7 @@ else:
             r"""
 ### Advanced Exercise: Start From FathomNet Megalodon
 
-The detector above starts from a general YOLO checkpoint. A stronger underwater baseline is [FathomNet Megalodon](https://huggingface.co/FathomNet/megalodon), a YOLOv8x object detector fine-tuned by MBARI/FathomNet to detect one class: `object`. The model card reports that it was trained from publicly available FathomNet localizations and is meant for post-processing underwater images and video.
+The detector above starts from a general YOLO checkpoint. A stronger underwater baseline is [FathomNet Megalodon](https://huggingface.co/FathomNet/megalodon), a YOLOv8x object detector fine-tuned by MBARI/FathomNet to detect one class: `object`. The model card reports that it was trained from publicly available FathomNet localisations and is meant for post-processing underwater images and video.
 
 This is an advanced path because the checkpoint is larger than `yolo11n.pt`, and fine-tuning it can be slow on a small free GPU. The key question is worth the trouble:
 
@@ -1396,7 +1396,7 @@ else:
             r"""
 #### Optional Fine-Tuning Scaffold
 
-Fine-tuning means continuing optimization from an existing checkpoint instead of starting from generic weights. For this small tutorial dataset, use a small learning rate and very few epochs first. Your goal is not to produce a publishable model in one run; your goal is to learn whether the domain-specific starting point changes the early training behavior.
+Fine-tuning means continuing optimisation from an existing checkpoint instead of starting from generic weights. For this small tutorial dataset, use a small learning rate and very few epochs first. Your goal is not to produce a publishable model in one run; your goal is to learn whether the domain-specific starting point changes the early training behaviour.
 
 Before running the cell, read the Ultralytics training examples and identify:
 
@@ -1431,7 +1431,7 @@ else:
             r"""
 ### Exercise: COCO Boxes To YOLO Boxes
 
-The bundle already includes YOLO labels so you can spend most of the session on modeling. The real conversion step is deliberately left as an exercise.
+The bundle already includes YOLO labels so you can spend most of the session on modelling. The real conversion step is deliberately left as an exercise.
 
 COCO stores a bounding box as
 
@@ -1445,7 +1445,7 @@ in pixel coordinates. YOLO detection stores one row as
 class_id center_x center_y width height
 ```
 
-with all four geometry values normalized to `[0,1]`.
+with all four geometry values normalised to `[0,1]`.
 """
         ),
         code(
@@ -1453,7 +1453,7 @@ with all four geometry values normalized to `[0,1]`.
 def coco_bbox_to_yolo_exercise(coco_bbox, image_width, image_height):
     '''Convert one COCO [x_min, y_min, width, height] box to YOLO geometry.
 
-    Return `(center_x, center_y, width, height)`, normalized by image size.
+    Return `(center_x, center_y, width, height)`, normalised by image size.
     Leave the return value as `None` until you are ready to test your answer.
     '''
 
@@ -1480,12 +1480,12 @@ Metrics tell you *how much* error there is. A failure taxonomy tells you *what k
 
 - good prediction;
 - missed small object;
-- poor localization;
+- poor localisation;
 - duplicate detection;
 - object-like background texture;
 - ambiguous or incomplete label.
 
-Look at a few predictions and assign one category to each. This is how you turn a metric into a modeling decision.
+Look at a few predictions and assign one category to each. This is how you turn a metric into a modelling decision.
 """
         ),
         code(
@@ -1493,7 +1493,7 @@ Look at a few predictions and assign one category to each. This is how you turn 
 ERROR_CATEGORIES = [
     "good prediction",
     "missed small object",
-    "poor localization",
+    "poor localisation",
     "duplicate detection",
     "object-like background texture",
     "ambiguous or incomplete label",
@@ -1529,7 +1529,7 @@ Intermediate:
 
 Advanced:
 
-- Turn on `RUN_TINY_OVERFIT_LAB` and check whether the model can memorize 8 training images.
+- Turn on `RUN_TINY_OVERFIT_LAB` and check whether the model can memorise 8 training images.
 - Turn on the Megalodon advanced path, compare its predictions with `yolo11n.pt`, and decide whether the domain-specific checkpoint changes the failure modes.
 - Fine-tune Megalodon for one or two epochs, then compare its early metrics with the generic checkpoint run.
 - Explain how the precision-recall curve would move if the model became more conservative.
@@ -1548,7 +1548,7 @@ For multiple objects, the model predicts a set of class-mask-score triples:
 
 $$\{(c_i,M_i,s_i)\}_{i=1}^m.$$
 
-As in the detection section, the live labels focus on larger visible instances. The omitted tiny polygons are a useful reminder that label design is part of the modeling problem, not a boring preprocessing footnote.
+As in the detection section, the live labels focus on larger visible instances. The omitted tiny polygons are a useful reminder that label design is part of the modelling problem, not a boring preprocessing footnote.
 
 The same IoU idea applies:
 
@@ -1560,7 +1560,7 @@ In the YOLO segmentation text format, one row is
 class x1 y1 x2 y2 ... xn yn
 ```
 
-where polygon coordinates are normalized to `[0,1]`.
+where polygon coordinates are normalised to `[0,1]`.
 """
         ),
         md(
@@ -1577,7 +1577,7 @@ Start the segmentation section by loading the YOLO segmentation YAML and validat
             r"""
 ### Segmentation Truth Example: Same Image, More Geometry
 
-This plot shows **ground-truth polygon labels** from the YOLO segmentation dataset. When possible, it uses the same image as the detection example above so you can compare boxes with masks directly. The colored regions are annotation polygons, not model predictions.
+This plot shows **ground-truth polygon labels** from the YOLO segmentation dataset. When possible, it uses the same image as the detection example above so you can compare boxes with masks directly. The coloured regions are annotation polygons, not model predictions.
 """
         ),
         code(
@@ -1639,16 +1639,16 @@ print("mask IoU:", mask_iou(mask_a, mask_b))
         ),
         md(
             r"""
-### Advanced Exercise: Rasterize A YOLO Polygon
+### Advanced Exercise: Rasterise A YOLO Polygon
 
-YOLO segmentation labels store polygons, but mask IoU is defined on pixels. To connect the two, rasterize one normalized polygon row into a binary mask.
+YOLO segmentation labels store polygons, but mask IoU is defined on pixels. To connect the two, rasterise one normalised polygon row into a binary mask.
 
 Implement `yolo_polygon_row_to_mask(...)`.
 
 Hints:
 
 - a YOLO segmentation row is `class_id x1 y1 x2 y2 ...`;
-- multiply normalized x coordinates by image width and y coordinates by image height;
+- multiply normalised x coordinates by image width and y coordinates by image height;
 - `PIL.ImageDraw.Draw(...).polygon(...)` can fill a polygon;
 - the output can be a NumPy boolean array or nested list of `0/1` values.
 """
@@ -1656,15 +1656,15 @@ Hints:
         code(
             r"""
 def yolo_polygon_row_to_mask(row, image_width, image_height):
-    '''Rasterize one YOLO segmentation polygon row into a binary mask.
+    '''Rasterise one YOLO segmentation polygon row into a binary mask.
 
     Leave the return value as `None` until you are ready to implement the
     advanced exercise.
     '''
 
     # TODO:
-    # 1. Parse row[1:] as normalized x/y coordinate pairs.
-    # 2. Convert normalized coordinates to pixel coordinates.
+    # 1. Parse row[1:] as normalised x/y coordinate pairs.
+    # 2. Convert normalised coordinates to pixel coordinates.
     # 3. Fill the polygon into a binary image.
     # 4. Return the mask.
     return None
@@ -1678,7 +1678,7 @@ with Image.open(first_segment_image) as example_segment_image:
 
 candidate_mask = yolo_polygon_row_to_mask(example_segment_row, example_width, example_height)
 if candidate_mask is None:
-    print("Exercise ready: implement yolo_polygon_row_to_mask(...) to rasterize a polygon label.")
+    print("Exercise ready: implement yolo_polygon_row_to_mask(...) to rasterise a polygon label.")
 else:
     import numpy as np
     import matplotlib.pyplot as plt
@@ -1688,7 +1688,7 @@ else:
     plt.figure(figsize=(6, 4))
     plt.imshow(candidate_mask, cmap="gray")
     plt.axis("off")
-    plt.title("Rasterized YOLO polygon")
+    plt.title("Rasterised YOLO polygon")
     plt.show()
 """
         ),
@@ -1763,7 +1763,7 @@ COCO segmentation annotations often store polygon vertices as one flat list:
 [x1, y1, x2, y2, ..., xn, yn]
 ```
 
-YOLO segmentation wants the same geometry normalized by image width and height, preceded by the class id.
+YOLO segmentation wants the same geometry normalised by image width and height, preceded by the class id.
 
 You do not get the full converter here. The point is to reason through the coordinate map first, then decide what edge cases a production converter needs to handle: multiple polygons, holes, tiny regions, invalid polygons, and categories you might merge.
 """
@@ -1811,7 +1811,7 @@ Intermediate:
 
 Advanced:
 
-- Complete `yolo_polygon_row_to_mask(...)` and compare the rasterized mask area with the polygon's bounding-box area.
+- Complete `yolo_polygon_row_to_mask(...)` and compare the rasterised mask area with the polygon's bounding-box area.
 - Use the coarse biological label plan from the source YOLO repo as an after-session extension.
 - Ask whether binary "object" segmentation is a scientifically useful target, or only a stepping stone.
 - Propose a rule for dropping or keeping tiny polygons, then predict how that rule will affect recall and mAP.
@@ -1983,7 +1983,7 @@ Hints:
 
 - `sam3_result["polygons"]` is a list of polygons;
 - `sam3_result["scores"]` is aligned with those polygons;
-- the cached polygons are already normalized to `[0, 1]`;
+- the cached polygons are already normalised to `[0, 1]`;
 - filter out masks below `score_threshold`;
 - each output row should look like `[class_id, x1, y1, x2, y2, ...]`.
 """
@@ -2042,7 +2042,7 @@ Advanced:
 You moved through four levels of supervision and geometry:
 
 - classification: one image crop, one class;
-- detection: objects as normalized boxes;
+- detection: objects as normalised boxes;
 - segmentation: objects as masks or polygons;
 - SAM3 prompting: segmentation conditioned on text.
 
@@ -2054,7 +2054,7 @@ Good after-session projects:
 - use SAM3 prompt outputs to propose labels for active learning,
 - extend from images to video tracking.
 
-The main lesson is not that one model wins everywhere. The real modeling choice is the pair:
+The main lesson is not that one model wins everywhere. The real modelling choice is the pair:
 
 $$\text{scientific question} \quad + \quad \text{label geometry}.$$
 

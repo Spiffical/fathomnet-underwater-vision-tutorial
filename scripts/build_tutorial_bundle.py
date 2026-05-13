@@ -1,6 +1,6 @@
 """Build the compact data bundle used by the underwater vision tutorial.
 
-The builder uses local artifacts from the existing ONC YOLO/SAM3 work and
+The builder uses local artefacts from the existing ONC YOLO/SAM3 work and
 creates a portable bundle with:
 
 - ImageFolder-style classification crops.
@@ -110,7 +110,7 @@ def read_yolo_rows(path: Path) -> list[list[float]]:
 
 
 def segment_to_detection_row(row: list[float]) -> list[float] | None:
-    """Convert one YOLO polygon row to one YOLO normalized bbox row."""
+    """Convert one YOLO polygon row to one YOLO normalised bbox row."""
 
     if len(row) < 7:
         return None
@@ -128,7 +128,7 @@ def segment_to_detection_row(row: list[float]) -> list[float] | None:
 
 
 def yolo_row_box_area(row: list[float], *, task: str) -> float:
-    """Return normalized bounding-box area for a YOLO detection or segment row."""
+    """Return normalised bounding-box area for a YOLO detection or segment row."""
 
     coords = row[1:]
     if task == "detect":
@@ -162,7 +162,7 @@ def write_yolo_yaml(dataset_dir: Path, *, task: str) -> None:
         "nc": 1,
         "names": {0: "object"},
         "tutorial_task": task,
-        "tutorial_note": f"Objects with normalized bbox area below {YOLO_MIN_BOX_AREA} are omitted for workshop-scale training.",
+        "tutorial_note": f"Objects with normalised bbox area below {YOLO_MIN_BOX_AREA} are omitted for workshop-scale training.",
     }
     with (dataset_dir / "dataset.yaml").open("w", encoding="utf-8") as handle:
         yaml.safe_dump(content, handle, sort_keys=False)
