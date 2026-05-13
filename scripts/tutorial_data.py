@@ -320,31 +320,102 @@ def summarize_dataset(bundle_root: str | Path) -> dict[str, object]:
     }
 
 
+def _read_detection_rows(label_path: Path) -> list[list[float]]:
+    """Read YOLO detection rows as floats, skipping malformed lines."""
+
+    rows: list[list[float]] = []
+    if not label_path.exists():
+        return rows
+    for line in label_path.read_text(encoding="utf-8").splitlines():
+        parts = line.strip().split()
+        if len(parts) != 5:
+            continue
+        try:
+            rows.append([float(part) for part in parts])
+        except ValueError:
+            continue
+    return rows
+
+
+def _detection_example_score(label_path: Path) -> float:
+    """Score a YOLO label file for a tiny overfit/debugging subset.
+
+    Larger boxes and images with several labelled objects make better debugging
+    examples because the learner can visually confirm that labels and images
+    line up. Empty label files are given a negative score and are avoided by
+    the `easy` selection strategy.
+    """
+
+    rows = _read_detection_rows(label_path)
+    if not rows:
+        return -1.0
+    areas = [max(0.0, row[3]) * max(0.0, row[4]) for row in rows]
+    return max(areas) + 0.15 * sum(areas) + 0.08 * len(areas)
+
+
 def make_tiny_detection_dataset(
     source_root: str | Path,
     output_root: str | Path,
     *,
     train_images: int = 8,
     val_images: int = 8,
+    selection_strategy: str = "first",
+    val_from_train: bool = False,
 ) -> Path:
     """Copy a tiny YOLO detection dataset for quick overfit/debugging labs.
 
     The tiny dataset is intentionally created under `tmp/` by the notebook. It
     should not be committed; it is a disposable local teaching artefact.
+
+    Parameters
+    ----------
+    selection_strategy:
+        Use `"first"` for deterministic alphabetical selection, or `"easy"` to
+        prefer images with visible labelled objects. The easy strategy is useful
+        for overfit checks because very small objects can produce weak gradients
+        and hard-to-interpret visual results.
+    val_from_train:
+        If true, copy the selected training examples into the validation split
+        too. That is not a valid generalisation estimate, but it is the right
+        setup for the specific question "can this model memorise a few images?"
     """
 
     source_root = Path(source_root)
     output_root = Path(output_root)
-    for split, count in {"train": train_images, "val": val_images}.items():
-        (output_root / "images" / split).mkdir(parents=True, exist_ok=True)
-        (output_root / "labels" / split).mkdir(parents=True, exist_ok=True)
-        labels = sorted((source_root / "labels" / split).glob("*.txt"))[:count]
-        for label_path in labels:
-            image_candidates = list((source_root / "images" / split).glob(f"{label_path.stem}.*"))
-            if not image_candidates:
+    if output_root.exists():
+        shutil.rmtree(output_root)
+
+    def select_labels(split: str, count: int) -> list[Path]:
+        label_paths = sorted((source_root / "labels" / split).glob("*.txt"))
+        if selection_strategy == "first":
+            return label_paths[:count]
+        if selection_strategy == "easy":
+            scored = [
+                (_detection_example_score(label_path), label_path)
+                for label_path in label_paths
+                if _matching_image_for_label(label_path, source_root / "images" / split) is not None
+            ]
+            return [label_path for _, label_path in sorted(scored, key=lambda item: (-item[0], item[1].name))[:count]]
+        raise ValueError(f"Unknown selection_strategy: {selection_strategy!r}")
+
+    def copy_split(label_paths: list[Path], *, source_split: str, destination_split: str) -> None:
+        (output_root / "images" / destination_split).mkdir(parents=True, exist_ok=True)
+        (output_root / "labels" / destination_split).mkdir(parents=True, exist_ok=True)
+        for label_path in label_paths:
+            image_path = _matching_image_for_label(label_path, source_root / "images" / source_split)
+            if image_path is None:
                 continue
-            shutil.copy2(image_candidates[0], output_root / "images" / split / image_candidates[0].name)
-            shutil.copy2(label_path, output_root / "labels" / split / label_path.name)
+            shutil.copy2(image_path, output_root / "images" / destination_split / image_path.name)
+            shutil.copy2(label_path, output_root / "labels" / destination_split / label_path.name)
+
+    train_labels = select_labels("train", train_images)
+    copy_split(train_labels, source_split="train", destination_split="train")
+
+    if val_from_train:
+        copy_split(train_labels[:val_images], source_split="train", destination_split="val")
+    else:
+        val_labels = select_labels("val", val_images)
+        copy_split(val_labels, source_split="val", destination_split="val")
 
     yaml_path = output_root / "dataset.yaml"
     yaml_path.write_text(

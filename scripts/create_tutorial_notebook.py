@@ -1158,19 +1158,22 @@ plt.show()
             r"""
 ### Train Or Load A Small Detection Run
 
-Now we train a binary object detector. The model starts from `yolo11n.pt`, an Ultralytics YOLO detection checkpoint, and the dataset comes from `DETECT_YAML`.
+Now we train a binary object detector. The model starts from `yolo11n.pt`, an Ultralytics YOLO detection checkpoint trained on general imagery, and the dataset comes from `DETECT_YAML`.
 
-If a GPU is available, this cell runs a short fine-tuning job. Otherwise, it loads a cached training curve. Either way, the output you should inspect is the same: precision, recall, `mAP50`, and `mAP50-95`. For a live run, the best validation checkpoint is saved as `weights/best.pt`.
+If a GPU is available, this cell runs a short fine-tuning job. Otherwise, it loads a cached training curve. Either way, the output you should inspect is the same: losses, precision, recall, `mAP50`, and `mAP50-95`. For a live run, the best validation checkpoint is saved as `weights/best.pt`.
+
+A generic YOLO checkpoint is a useful baseline, but it is not expected to solve underwater detection from a small bundle. If the validation metrics stay modest while the training losses decrease, that is not a broken notebook; it is evidence of domain shift and limited data. The FathomNet Megalodon extension below gives you a domain-specific comparison point.
 """
         ),
         code(
             r"""
-DETECT_N_EPOCHS = 10
+DETECT_N_EPOCHS = 15
 DETECT_ARGS = build_train_args(
     n_epochs=DETECT_N_EPOCHS,
-    imgsz=320,
+    imgsz=640,
     batch=8,
     lr0=0.001,
+    patience=10,
     project=REPO_ROOT / "runs" / "detect",
     name="detect_default",
 )
@@ -1211,6 +1214,13 @@ if not detection_results_csv.exists():
 
 plot_training_curves(
     detection_results_csv,
+    metric_columns=["val/box_loss", "val/cls_loss", "val/dfl_loss"],
+    include_training=True,
+    title="Detection losses: training and validation",
+)
+
+plot_training_curves(
+    detection_results_csv,
     metric_columns=["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"],
     include_training=False,
     title="Detection metrics",
@@ -1223,7 +1233,9 @@ plot_training_curves(
 
 Training gives the model parameters. The confidence threshold is a decision rule you choose after the model scores candidate detections.
 
-Sweep a few thresholds on the same underwater image. Your job is to describe the tradeoff in plain language before you look at the metric names:
+Sweep a few thresholds on one training image and one held-out validation image. A training image shows how the model behaves on data it optimised against. A validation image is a closer proxy for generalisation. This compact bundle has train/validation splits rather than a separate test split, so the validation image is the held-out comparison here.
+
+Your job is to describe the tradeoff in plain language before you look at the metric names:
 
 - low threshold: more detections, more possible false positives;
 - high threshold: fewer detections, more possible missed objects.
@@ -1244,20 +1256,38 @@ try:
         else "yolo11n.pt"
     )
     threshold_model = YOLO(str(threshold_weights))
-    threshold_image = first_detect_image
-    threshold_sweep_rows = [
-        prediction_count_at_threshold(threshold_model, threshold_image, conf=value, repo_root=REPO_ROOT)
-        for value in THRESHOLD_SWEEP_VALUES
-    ]
+
+    train_threshold_example = select_yolo_examples(DETECT_ROOT, split="train", min_instances=2, limit=1)[0]
+    threshold_images = {
+        "training": train_threshold_example["image_path"],
+        "validation": first_detect_image,
+    }
+
+    for split_name, image_path in threshold_images.items():
+        for value in THRESHOLD_SWEEP_VALUES:
+            row = prediction_count_at_threshold(threshold_model, image_path, conf=value, repo_root=REPO_ROOT, imgsz=640)
+            row["split"] = split_name
+            row["image_path"] = image_path
+            threshold_sweep_rows.append(row)
 
     for row in threshold_sweep_rows:
-        print(f"conf={row['conf']:.2f}: detections={row['detections']}, mean score={row['mean_score']:.3f}")
+        print(
+            f"{row['split']:>10} | conf={row['conf']:.2f} | "
+            f"detections={row['detections']:2d} | mean score={row['mean_score']:.3f}"
+        )
 
-    fig, axes = plt.subplots(1, len(threshold_sweep_rows), figsize=(4 * len(threshold_sweep_rows), 4))
-    for ax, row in zip(axes, threshold_sweep_rows):
-        ax.imshow(row["result"].plot()[..., ::-1])
-        ax.set_title(f"conf >= {row['conf']}")
-        ax.axis("off")
+    fig, axes = plt.subplots(2, len(THRESHOLD_SWEEP_VALUES), figsize=(4 * len(THRESHOLD_SWEEP_VALUES), 7))
+    for row_index, split_name in enumerate(threshold_images):
+        for col_index, conf_value in enumerate(THRESHOLD_SWEEP_VALUES):
+            row = next(
+                item
+                for item in threshold_sweep_rows
+                if item["split"] == split_name and item["conf"] == conf_value
+            )
+            ax = axes[row_index, col_index]
+            ax.imshow(row["result"].plot()[..., ::-1])
+            ax.set_title(f"{split_name}: conf >= {conf_value}")
+            ax.axis("off")
     plt.tight_layout()
     plt.show()
 except Exception as exc:
@@ -1271,6 +1301,12 @@ except Exception as exc:
 
 A powerful debugging move is to ask whether the model can memorise a tiny training set. If it cannot overfit 8-12 examples, something may be wrong with the labels, model wiring, optimisation settings, or data path.
 
+This lab is intentionally different from normal model evaluation:
+
+- it chooses examples with visible labelled objects rather than arbitrary tiny or empty labels;
+- it uses the same images for training and validation, so validation mAP is a memorisation check, not a generalisation estimate;
+- it disables data augmentation because random crops, flips, colour shifts, and mosaic augmentation can make a tiny memorisation test much harder to interpret.
+
 This cell prepares the tiny dataset for you. Training is off by default because it is a live GPU exercise.
 """
         ),
@@ -1282,21 +1318,45 @@ tiny_detect_yaml = make_tiny_detection_dataset(
     REPO_ROOT / "tmp" / "tiny_detection_overfit",
     train_images=8,
     val_images=8,
+    selection_strategy="easy",
+    val_from_train=True,
 )
 print(f"Tiny overfit dataset: {tiny_detect_yaml}")
+print("For this lab only, the validation split contains the same examples as the training split.")
 
 if RUN_TINY_OVERFIT_LAB and RUN_LIVE_TRAINING:
     from ultralytics import YOLO
 
-    TINY_OVERFIT_N_EPOCHS = 10
+    TINY_OVERFIT_N_EPOCHS = 50
     tiny_args = build_train_args(
         n_epochs=TINY_OVERFIT_N_EPOCHS,
-        imgsz=320,
+        imgsz=640,
         batch=4,
         lr0=0.003,
-        patience=20,
+        patience=50,
         project=REPO_ROOT / "runs" / "tiny_overfit",
         name="detect_8_images",
+    )
+    # For an overfit sanity check, remove augmentation so the model sees the
+    # same small set of examples every epoch.
+    tiny_args.update(
+        {
+            "mosaic": 0.0,
+            "mixup": 0.0,
+            "copy_paste": 0.0,
+            "erasing": 0.0,
+            "hsv_h": 0.0,
+            "hsv_s": 0.0,
+            "hsv_v": 0.0,
+            "degrees": 0.0,
+            "translate": 0.0,
+            "scale": 0.0,
+            "shear": 0.0,
+            "perspective": 0.0,
+            "fliplr": 0.0,
+            "flipud": 0.0,
+            "close_mosaic": 0,
+        }
     )
     tiny_model = YOLO("yolo11n.pt")
     tiny_result = tiny_model.train(data=str(tiny_detect_yaml), **tiny_args)
@@ -1312,7 +1372,7 @@ if RUN_TINY_OVERFIT_LAB and RUN_LIVE_TRAINING:
     )
 else:
     print("Tiny overfit lab is ready. Set RUN_TINY_OVERFIT_LAB = True on a GPU.")
-    print("Success criterion: training loss drops strongly; validation may or may not improve.")
+    print("Success criterion: training loss drops strongly and same-image validation mAP improves.")
 """
         ),
         md(
@@ -1517,12 +1577,12 @@ print("3. Assign one error category and write one sentence explaining the likely
 Beginner:
 
 - Use the Ultralytics training guide to identify the two lines that load a model and start training.
-- Run the confidence threshold sweep and describe what changes from `0.10` to `0.80`.
+- Run the confidence threshold sweep and describe what changes from `0.10` to `0.80` on the training image versus the validation image.
 - Complete the toy matching exercise: what is TP, FP, and FN at each confidence threshold?
 
 Intermediate:
 
-- Change `imgsz` from `320` to `416`.
+- Change `imgsz` from `640` to `320`, then compare speed and validation metrics.
 - Change `DETECT_N_EPOCHS`, `lr0`, or `batch`, then compare `mAP50` and recall.
 - Complete `coco_bbox_to_yolo_exercise(...)` above.
 - Use the error taxonomy on two predicted images.

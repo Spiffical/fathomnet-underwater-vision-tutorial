@@ -607,6 +607,7 @@ For a three-hour live session, a reasonable pacing target is:
 - Lower thresholds tend to increase the number of detections and increase recall opportunities.
 - Higher thresholds tend to suppress weak boxes, which often improves precision but can remove real objects.
 - The model weights do not change during this lab. Only the decision rule changes.
+- Comparing a training image to a held-out validation image helps separate memorisation from generalisation. The compact bundle does not include a separate test split, so validation is the held-out comparison here.
 - If the generic COCO detector finds little in underwater images, that is itself a domain-shift result.
 """
         ),
@@ -620,7 +621,9 @@ For a three-hour live session, a reasonable pacing target is:
 ### Master Notes: Tiny Overfit
 
 - A successful tiny-overfit run should drive training loss down sharply.
-- Validation mAP may remain noisy because the validation set is also tiny and may contain different-looking objects.
+- In this lab, validation intentionally points at the same images as training. This makes validation mAP a memorisation sanity check, not a generalisation estimate.
+- The helper chooses examples with visible labelled objects because very small objects can produce weak gradients and confusing visual feedback.
+- Augmentations are disabled so the model sees the same tiny set every epoch.
 - If training loss does not drop, first suspect data paths, label format, learning rate, batch size, or whether the labels actually align with the images.
 - This is a debugging test, not a final model-quality test.
 """
