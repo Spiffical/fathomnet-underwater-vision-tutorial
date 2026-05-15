@@ -162,7 +162,15 @@ print(f"Repository root: {REPO_ROOT}")
             r"""
 ### Dependencies And Runtime
 
-Now check the Python dependencies, inspect the GPU/runtime, and set the random seed. In Colab this cell installs missing packages; locally it only checks what is already importable.
+Now check the Python dependencies, inspect the GPU/runtime, and set the random seed. In Colab this cell installs or repairs a pinned vision stack:
+
+- `torch==2.11.0`
+- `torchvision==0.26.0`
+- `ultralytics==8.4.41`
+
+The Torch packages are installed from the PyTorch CUDA 12.8 wheel index. That pinning matters because Colab runtimes can differ slightly across accounts, sessions, and hardware allocations, and `torch`, `torchvision`, and `ultralytics` need to agree with one another.
+
+Run this cell before importing `torch` or `ultralytics` elsewhere. If it changes Torch or Torchvision after one of them has already been imported, restart the runtime and rerun from the top.
 """
         ),
         code(
@@ -184,7 +192,12 @@ IN_COLAB = "google.colab" in sys.modules
 INSTALL_DEPENDENCIES = IN_COLAB
 RUN_LIVE_TRAINING = False  # updated after the runtime check
 
-ensure_dependencies(install=INSTALL_DEPENDENCIES, extra_pip_args=("--quiet",))
+DEPENDENCY_STATUS = ensure_dependencies(install=INSTALL_DEPENDENCIES, extra_pip_args=("--quiet",))
+print("Pinned dependency report:")
+print(json.dumps(DEPENDENCY_STATUS["version_report_after"], indent=2))
+if DEPENDENCY_STATUS.get("restart_recommended"):
+    print("Restart the runtime now, then rerun from the first setup cell.")
+
 RUNTIME = print_runtime_summary(detect_runtime())
 RUN_LIVE_TRAINING = bool(RUNTIME.get("has_cuda", False))
 set_reproducible_seed(42)

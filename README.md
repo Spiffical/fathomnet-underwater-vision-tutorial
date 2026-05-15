@@ -39,6 +39,8 @@ pip install -r requirements.txt
 jupyter lab
 ```
 
+The tutorial pins the core vision stack to `torch==2.11.0`, `torchvision==0.26.0`, and `ultralytics==8.4.41`. The notebook setup cell applies the same pinning in Colab and prints a dependency report before training.
+
 The notebooks also run in CPU-only fallback mode. Live YOLO training is enabled only when CUDA is available.
 
 ## Regenerating The Notebooks

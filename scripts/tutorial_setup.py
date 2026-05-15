@@ -8,6 +8,7 @@ module can be inspected even before the teaching environment is fully ready.
 from __future__ import annotations
 
 import importlib.util
+import importlib.metadata
 import json
 import os
 import platform
@@ -21,8 +22,21 @@ from pathlib import Path
 from typing import Iterable
 
 
+PINNED_TORCH_STACK = {
+    "torch": "2.11.0",
+    "torchvision": "0.26.0",
+}
+
+PINNED_PIP_PACKAGES = {
+    "ultralytics": "ultralytics==8.4.41",
+}
+
+PYTORCH_CU128_INDEX_URL = "https://download.pytorch.org/whl/cu128"
+
 DEFAULT_IMPORTS = {
-    "ultralytics": "ultralytics",
+    "torch": "torch==2.11.0",
+    "torchvision": "torchvision==0.26.0",
+    "ultralytics": "ultralytics==8.4.41",
     "numpy": "numpy",
     "pandas": "pandas",
     "matplotlib": "matplotlib",
@@ -88,6 +102,64 @@ def _run_text(command: list[str], timeout: int = 10) -> str | None:
     return completed.stdout.strip()
 
 
+def _installed_distribution_version(distribution_name: str) -> str | None:
+    """Return an installed package version without importing the package."""
+
+    try:
+        return importlib.metadata.version(distribution_name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _version_matches(installed: str | None, expected: str) -> bool:
+    """Return true when `installed` has the expected public version prefix."""
+
+    if installed is None:
+        return False
+    return installed == expected or installed.startswith(f"{expected}+")
+
+
+def dependency_versions() -> dict[str, object]:
+    """Report the package versions most likely to cause Colab incompatibilities."""
+
+    payload: dict[str, object] = {
+        "python": sys.version.split()[0],
+        "torch": _installed_distribution_version("torch"),
+        "torchvision": _installed_distribution_version("torchvision"),
+        "ultralytics": _installed_distribution_version("ultralytics"),
+        "expected": {
+            "torch": PINNED_TORCH_STACK["torch"],
+            "torchvision": PINNED_TORCH_STACK["torchvision"],
+            "ultralytics": "8.4.41",
+        },
+        "torch_cuda": None,
+        "cuda_available": False,
+        "status": "unchecked",
+        "mismatches": [],
+    }
+
+    for package_name, expected_version in PINNED_TORCH_STACK.items():
+        installed = payload.get(package_name)
+        if not _version_matches(str(installed) if installed else None, expected_version):
+            payload["mismatches"].append(
+                f"{package_name}: expected {expected_version}, found {installed or 'not installed'}"
+            )
+    ultralytics_version = payload.get("ultralytics")
+    if not _version_matches(str(ultralytics_version) if ultralytics_version else None, "8.4.41"):
+        payload["mismatches"].append(
+            f"ultralytics: expected 8.4.41, found {ultralytics_version or 'not installed'}"
+        )
+
+    if importlib.util.find_spec("torch") is not None:
+        import torch
+
+        payload["torch_cuda"] = getattr(torch.version, "cuda", None)
+        payload["cuda_available"] = bool(torch.cuda.is_available())
+
+    payload["status"] = "ok" if not payload["mismatches"] else "mismatch"
+    return payload
+
+
 def detect_runtime() -> dict[str, object]:
     """Summarise the active notebook/runtime environment."""
 
@@ -101,6 +173,8 @@ def detect_runtime() -> dict[str, object]:
         "cuda_device_count": 0,
         "cuda_device_name": None,
         "torch_version": None,
+        "torchvision_version": _installed_distribution_version("torchvision"),
+        "ultralytics_version": _installed_distribution_version("ultralytics"),
         "nvidia_smi": None,
     }
 
@@ -148,28 +222,88 @@ def ensure_dependencies(
     """
 
     packages = dict(packages or DEFAULT_IMPORTS)
+    pinned_imports = {"torch", "torchvision", *PINNED_PIP_PACKAGES.keys()}
+    result: dict[str, object] = {
+        "missing": [],
+        "installed": [],
+        "restart_recommended": False,
+        "version_report_before": {
+            "torch": _installed_distribution_version("torch"),
+            "torchvision": _installed_distribution_version("torchvision"),
+            "ultralytics": _installed_distribution_version("ultralytics"),
+        },
+    }
+
+    if install:
+        torch_stack_mismatch = [
+            package_name
+            for package_name, expected_version in PINNED_TORCH_STACK.items()
+            if not _version_matches(_installed_distribution_version(package_name), expected_version)
+        ]
+        if torch_stack_mismatch:
+            if any(package_name in sys.modules for package_name in PINNED_TORCH_STACK):
+                result["restart_recommended"] = True
+                print(
+                    "Torch or Torchvision is already imported in this runtime. "
+                    "If pip changes these packages, restart the runtime before training."
+                )
+            torch_specs = [
+                f"{package_name}=={expected_version}"
+                for package_name, expected_version in PINNED_TORCH_STACK.items()
+            ]
+            command = [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                *extra_pip_args,
+                "--index-url",
+                PYTORCH_CU128_INDEX_URL,
+                *torch_specs,
+            ]
+            print("Installing pinned PyTorch stack:", " ".join(torch_specs))
+            subprocess.check_call(command)
+            result["installed"].extend(torch_specs)
+            importlib.invalidate_caches()
+
+        for import_name, pip_spec in PINNED_PIP_PACKAGES.items():
+            expected_version = pip_spec.split("==", 1)[1]
+            if not _version_matches(_installed_distribution_version(import_name), expected_version):
+                command = [sys.executable, "-m", "pip", "install", *extra_pip_args, pip_spec]
+                print("Installing pinned package:", pip_spec)
+                subprocess.check_call(command)
+                result["installed"].append(pip_spec)
+                importlib.invalidate_caches()
+
     missing = [
         pip_name
         for import_name, pip_name in packages.items()
-        if importlib.util.find_spec(import_name) is None
+        if import_name not in pinned_imports and importlib.util.find_spec(import_name) is None
     ]
-    result: dict[str, object] = {"missing": missing, "installed": []}
-
     if missing and install:
         command = [sys.executable, "-m", "pip", "install", *extra_pip_args, *missing]
         print("Installing:", " ".join(missing))
         subprocess.check_call(command)
-        result["installed"] = missing
-        result["missing"] = [
-            pip_name
-            for import_name, pip_name in packages.items()
-            if importlib.util.find_spec(import_name) is None
-        ]
+        result["installed"].extend(missing)
+        importlib.invalidate_caches()
 
-    if result["missing"]:
+    result["missing"] = [
+        pip_name
+        for import_name, pip_name in packages.items()
+        if importlib.util.find_spec(import_name) is None
+    ]
+    result["version_report_after"] = dependency_versions()
+
+    if result["version_report_after"]["mismatches"]:
+        print("Pinned dependency mismatches:")
+        for mismatch in result["version_report_after"]["mismatches"]:
+            print(" -", mismatch)
+    elif result["missing"]:
         print("Missing optional dependencies:", ", ".join(result["missing"]))
     else:
-        print("All requested dependencies are importable.")
+        print("All requested dependencies are importable and pinned versions match.")
+    if result["restart_recommended"]:
+        print("Restart the runtime before running training cells, then rerun setup from the top.")
     return result
 
 
