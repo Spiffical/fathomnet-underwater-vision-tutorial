@@ -13,6 +13,10 @@ https://colab.research.google.com/github/Spiffical/fathomnet-underwater-vision-t
 
 The master notebook includes filled-in exercise answers and instructor notes.
 
+Instructor exercise answer key:
+
+- `docs/exercise_answer_key.md`
+
 ## Data
 
 The workshop uses a compact prebuilt bundle:
