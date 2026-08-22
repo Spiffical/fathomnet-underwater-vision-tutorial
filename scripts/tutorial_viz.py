@@ -273,19 +273,49 @@ def plot_sam3_result(
     score_threshold: float = 0.0,
     title: str | None = None,
 ):
-    """Plot a cached or live SAM3-like result with boxes and polygons."""
+    """Plot a cached reference or live SAM3 result with masks, polygons, and boxes."""
 
     if not isinstance(result, dict):
         with Path(result).open("r", encoding="utf-8") as handle:
             result = json.load(handle)
 
     plt, patches = _require_matplotlib()
+    import numpy as np
     image = _open_image(image_path)
     width, height = image.size
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.imshow(image)
     ax.axis("off")
     scores = result.get("scores", [])
+
+    raw_masks = result.get("masks", [])
+    if raw_masks is not None and len(raw_masks):
+        masks = np.asarray(raw_masks)
+        if masks.ndim == 2:
+            masks = masks[None, ...]
+        if masks.ndim == 4 and masks.shape[1] == 1:
+            masks = masks[:, 0]
+        for index, mask in enumerate(masks):
+            score = float(scores[index]) if index < len(scores) else 1.0
+            if score < score_threshold:
+                continue
+            mask = np.squeeze(mask)
+            if mask.ndim != 2:
+                continue
+            if mask.shape != (height, width):
+                from PIL import Image
+
+                mask = np.asarray(
+                    Image.fromarray(mask.astype("float32"), mode="F").resize(
+                        (width, height),
+                        resample=Image.Resampling.NEAREST,
+                    )
+                )
+            color = np.asarray(plt.get_cmap("tab10")(index % 10))
+            overlay = np.zeros((height, width, 4), dtype=float)
+            overlay[..., :3] = color[:3]
+            overlay[..., 3] = (mask > 0.5) * 0.30
+            ax.imshow(overlay)
 
     for index, box in enumerate(result.get("boxes", [])):
         score = float(scores[index]) if index < len(scores) else 1.0

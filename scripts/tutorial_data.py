@@ -13,6 +13,101 @@ import yaml
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 
 
+# Broad visual groups for the optional multi-class detection appendix. These
+# classes make a small workshop dataset trainable; they are not a taxonomic
+# hierarchy and should be replaced with project-specific expert labels in a
+# scientific study.
+FATHOMNET_COARSE_DETECTION_GROUPS = {
+    "fish": {
+        "Anoplopoma",
+        "Bathyraja kincaidii",
+        "Lamprogrammus",
+        "Pleuronectiformes",
+        "Sebastes",
+        "Sebastes melanostomus",
+    },
+    "crustacean": {
+        "Chionoecetes tanneri",
+        "Euphausia",
+        "Eusergestes similis",
+        "Phronima sedentaria",
+        "shrimp",
+        "Sternostylus perarmatus",
+    },
+    "echinoderm": {
+        "Abyssocucumis abyssorum",
+        "Actinopyga echinites",
+        "Apostichopus leukothele",
+        "Asteroidea",
+        "Benthodytes",
+        "Crinoidea",
+        "Cystocrepis setigera",
+        "Echinocrepis rostrata",
+        "Elpidia",
+        "Ophiocreas oedipus",
+        "Ophiuroidea",
+        "Peniagone",
+        "Peniagone vitrea",
+        "Psolus squamatus",
+        "Pterasteridae",
+        "Rathbunaster californicus",
+        "Strongylocentrotus fragilis",
+        "Synallactidae",
+    },
+    "gelatinous": {
+        "Aegina",
+        "Aglantha digitale",
+        "Apolemia",
+        "Atolla",
+        "Bathochordaeus",
+        "Bathochordaeus stygius",
+        "Bathocyroe fosteri",
+        "Benthocodon",
+        "Beroe",
+        "Beroe cucumis",
+        "Deepstaria enigmatica",
+        "Desmophyes haematogaster",
+        "Haliscera conica",
+        "Lampocteis cruentiventer",
+        "Nanomia bijuga",
+        "Physophora hydrostatica",
+        "Poralia rufescens",
+        "Prayidae",
+        "Pyrosoma",
+        "Salpida",
+        "Sphaeronectes haddocki",
+        "Stellamedusa ventana",
+    },
+    "sponge/cnidarian": {
+        "Actiniaria",
+        "Actiniidae",
+        "Actinernus",
+        "Alcyonacea",
+        "black coral",
+        "Dofleinia",
+        "Farrea",
+        "Heterochone calyx",
+        "Hexactinellida",
+        "Iosactis vagabunda",
+        "Isididae",
+        "Isosicyonis",
+        "Keratoisis",
+        "Keratoisididae",
+        "Keratoisidinae",
+        "Metallogorgia melanotrichos",
+        "Narella",
+        "Paragorgia arborea",
+        "Parazoanthidae",
+        "Pennatulacea",
+        "Porifera",
+        "Psamminidae",
+        "sponge",
+        "Staurocalyptus",
+        "Umbellula",
+    },
+}
+
+
 def load_manifest(bundle_root: str | Path) -> dict:
     """Load the bundle manifest."""
 
@@ -452,3 +547,257 @@ def make_tiny_detection_dataset(
         encoding="utf-8",
     )
     return yaml_path
+
+
+def make_detection_finetune_dataset(
+    source_root: str | Path,
+    output_root: str | Path,
+    *,
+    positive_train_images: int = 24,
+    negative_train_images: int = 8,
+    val_images: int | None = None,
+) -> Path:
+    """Build the deterministic detection subset used in the one-hour lesson.
+
+    Positive examples are ranked using the same visible-object heuristic as
+    ``make_tiny_detection_dataset(..., selection_strategy="easy")``. Empty
+    label files are included separately so a short fine-tune also sees a few
+    background-only frames. Validation examples always come from the original
+    validation split; ``None`` keeps that complete split.
+
+    The output is disposable and is intended to live under ``tmp/``.
+    """
+
+    source_root = Path(source_root)
+    output_root = Path(output_root)
+    if output_root.exists():
+        shutil.rmtree(output_root)
+
+    train_label_dir = source_root / "labels" / "train"
+    train_image_dir = source_root / "images" / "train"
+    train_labels = sorted(train_label_dir.glob("*.txt"))
+
+    positive_candidates = [
+        label_path
+        for label_path in train_labels
+        if _read_detection_rows(label_path)
+        and _matching_image_for_label(label_path, train_image_dir) is not None
+    ]
+    positive_candidates.sort(
+        key=lambda label_path: (-_detection_example_score(label_path), label_path.name)
+    )
+    negative_candidates = [
+        label_path
+        for label_path in train_labels
+        if not _read_detection_rows(label_path)
+        and _matching_image_for_label(label_path, train_image_dir) is not None
+    ]
+
+    selected_train = (
+        positive_candidates[:positive_train_images]
+        + negative_candidates[:negative_train_images]
+    )
+
+    val_label_dir = source_root / "labels" / "val"
+    val_image_dir = source_root / "images" / "val"
+    selected_val = [
+        label_path
+        for label_path in sorted(val_label_dir.glob("*.txt"))
+        if _matching_image_for_label(label_path, val_image_dir) is not None
+    ]
+    if val_images is not None:
+        selected_val = selected_val[:val_images]
+
+    def copy_split(
+        label_paths: list[Path],
+        *,
+        source_image_dir: Path,
+        destination_split: str,
+    ) -> None:
+        image_output = output_root / "images" / destination_split
+        label_output = output_root / "labels" / destination_split
+        image_output.mkdir(parents=True, exist_ok=True)
+        label_output.mkdir(parents=True, exist_ok=True)
+        for label_path in label_paths:
+            image_path = _matching_image_for_label(label_path, source_image_dir)
+            if image_path is None:
+                continue
+            shutil.copy2(image_path, image_output / image_path.name)
+            shutil.copy2(label_path, label_output / label_path.name)
+
+    copy_split(
+        selected_train,
+        source_image_dir=train_image_dir,
+        destination_split="train",
+    )
+    copy_split(
+        selected_val,
+        source_image_dir=val_image_dir,
+        destination_split="val",
+    )
+
+    yaml_path = output_root / "dataset.yaml"
+    yaml_path.write_text(
+        yaml.safe_dump(
+            {
+                "path": str(output_root.resolve()),
+                "train": "images/train",
+                "val": "images/val",
+                "names": {0: "underwater object"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return yaml_path
+
+
+def make_coarse_multiclass_detection_dataset(
+    coco_json_path: str | Path,
+    source_detection_root: str | Path,
+    output_root: str | Path,
+    *,
+    min_box_area: float = 0.005,
+) -> dict[str, object]:
+    """Build a five-class YOLO detection dataset from the tutorial COCO data.
+
+    The source bundle stores one-class YOLO labels for the main lesson and the
+    original concept names in COCO format. This helper maps selected concepts
+    into five broad visual groups, preserves the original train/validation
+    split, converts COCO ``[x, y, width, height]`` boxes into normalized YOLO
+    rows, and writes a disposable dataset under ``tmp/``.
+
+    Categories outside the five workshop groups are deliberately omitted.
+    Images that contain no retained categories remain in the dataset with an
+    empty label file, where they act as background examples for these targets.
+    """
+
+    coco_json_path = Path(coco_json_path)
+    source_root = Path(source_detection_root)
+    output_root = Path(output_root)
+    if output_root.exists():
+        shutil.rmtree(output_root)
+
+    with coco_json_path.open("r", encoding="utf-8") as handle:
+        coco = json.load(handle)
+
+    class_names = {
+        class_id: class_name
+        for class_id, class_name in enumerate(FATHOMNET_COARSE_DETECTION_GROUPS)
+    }
+    class_ids = {class_name: class_id for class_id, class_name in class_names.items()}
+    category_to_class = {
+        category_name: class_name
+        for class_name, category_names in FATHOMNET_COARSE_DETECTION_GROUPS.items()
+        for category_name in category_names
+    }
+    category_names = {
+        int(category["id"]): str(category["name"])
+        for category in coco.get("categories", [])
+    }
+    image_records = {
+        Path(image["file_name"]).stem: image
+        for image in coco.get("images", [])
+    }
+    annotations_by_image_id: dict[int, list[dict]] = {}
+    for annotation in coco.get("annotations", []):
+        annotations_by_image_id.setdefault(int(annotation["image_id"]), []).append(annotation)
+
+    instance_counts = {split: Counter() for split in ("train", "val")}
+    image_counts = {split: Counter() for split in ("train", "val")}
+    empty_label_files = Counter()
+    filtered_small_instances = Counter()
+    unmapped_categories = Counter()
+
+    for split in ("train", "val"):
+        source_image_dir = source_root / "images" / split
+        output_image_dir = output_root / "images" / split
+        output_label_dir = output_root / "labels" / split
+        output_image_dir.mkdir(parents=True, exist_ok=True)
+        output_label_dir.mkdir(parents=True, exist_ok=True)
+
+        for image_path in _image_files(source_image_dir):
+            image_record = image_records.get(image_path.stem)
+            if image_record is None:
+                raise KeyError(f"COCO metadata not found for {image_path.name}")
+
+            shutil.copy2(image_path, output_image_dir / image_path.name)
+            image_width = float(image_record["width"])
+            image_height = float(image_record["height"])
+            rows: list[str] = []
+            classes_in_image: set[str] = set()
+
+            for annotation in annotations_by_image_id.get(int(image_record["id"]), []):
+                category_name = category_names.get(int(annotation["category_id"]), "unknown")
+                class_name = category_to_class.get(category_name)
+                if class_name is None:
+                    unmapped_categories[category_name] += 1
+                    continue
+
+                x, y, width, height = (float(value) for value in annotation["bbox"])
+                x0 = max(0.0, min(image_width, x))
+                y0 = max(0.0, min(image_height, y))
+                x1 = max(0.0, min(image_width, x + width))
+                y1 = max(0.0, min(image_height, y + height))
+                box_width = x1 - x0
+                box_height = y1 - y0
+                normalized_width = box_width / image_width
+                normalized_height = box_height / image_height
+                if box_width <= 0 or box_height <= 0:
+                    continue
+                if normalized_width * normalized_height < min_box_area:
+                    filtered_small_instances[class_name] += 1
+                    continue
+
+                x_center = ((x0 + x1) / 2.0) / image_width
+                y_center = ((y0 + y1) / 2.0) / image_height
+                rows.append(
+                    f"{class_ids[class_name]} {x_center:.6f} {y_center:.6f} "
+                    f"{normalized_width:.6f} {normalized_height:.6f}"
+                )
+                instance_counts[split][class_name] += 1
+                classes_in_image.add(class_name)
+
+            for class_name in classes_in_image:
+                image_counts[split][class_name] += 1
+            if not rows:
+                empty_label_files[split] += 1
+            (output_label_dir / f"{image_path.stem}.txt").write_text(
+                "\n".join(rows),
+                encoding="utf-8",
+            )
+
+    yaml_path = output_root / "dataset.yaml"
+    yaml_path.write_text(
+        yaml.safe_dump(
+            {
+                "path": str(output_root.resolve()),
+                "train": "images/train",
+                "val": "images/val",
+                "names": class_names,
+                "tutorial_task": "coarse multiclass detection",
+                "tutorial_note": (
+                    "Broad visual workshop labels derived from selected FathomNet concepts; "
+                    "not a taxonomic hierarchy."
+                ),
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    return {
+        "yaml_path": str(yaml_path),
+        "class_names": class_names,
+        "instance_counts": {
+            split: {class_name: instance_counts[split][class_name] for class_name in class_names.values()}
+            for split in ("train", "val")
+        },
+        "image_counts": {
+            split: {class_name: image_counts[split][class_name] for class_name in class_names.values()}
+            for split in ("train", "val")
+        },
+        "empty_label_files": dict(empty_label_files),
+        "filtered_small_instances": dict(filtered_small_instances),
+        "unmapped_annotation_counts": dict(sorted(unmapped_categories.items())),
+    }
