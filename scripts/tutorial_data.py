@@ -540,7 +540,7 @@ def make_tiny_detection_dataset(
                 "path": str(output_root.resolve()),
                 "train": "images/train",
                 "val": "images/val",
-                "names": {0: "object"},
+                "names": {0: "underwater organism"},
             },
             sort_keys=False,
         ),
@@ -557,11 +557,11 @@ def make_detection_finetune_dataset(
     negative_train_images: int = 8,
     val_images: int | None = None,
 ) -> Path:
-    """Build the deterministic detection subset used in the one-hour lesson.
+    """Build the deterministic detection subset used in the object-detection tutorial.
 
     Positive examples are ranked using the same visible-object heuristic as
     ``make_tiny_detection_dataset(..., selection_strategy="easy")``. Empty
-    label files are included separately so a short fine-tune also sees a few
+    label files can be included separately when the source dataset contains
     background-only frames. Validation examples always come from the original
     validation split; ``None`` keeps that complete split.
 
@@ -643,7 +643,7 @@ def make_detection_finetune_dataset(
                 "path": str(output_root.resolve()),
                 "train": "images/train",
                 "val": "images/val",
-                "names": {0: "underwater object"},
+                "names": {0: "underwater organism"},
             },
             sort_keys=False,
         ),
@@ -708,6 +708,7 @@ def make_coarse_multiclass_detection_dataset(
     empty_label_files = Counter()
     filtered_small_instances = Counter()
     unmapped_categories = Counter()
+    reviewed_negative_images = Counter()
 
     for split in ("train", "val"):
         source_image_dir = source_root / "images" / split
@@ -717,15 +718,20 @@ def make_coarse_multiclass_detection_dataset(
         output_label_dir.mkdir(parents=True, exist_ok=True)
 
         for image_path in _image_files(source_image_dir):
-            image_record = image_records.get(image_path.stem)
-            if image_record is None:
-                raise KeyError(f"COCO metadata not found for {image_path.name}")
-
             shutil.copy2(image_path, output_image_dir / image_path.name)
-            image_width = float(image_record["width"])
-            image_height = float(image_record["height"])
             rows: list[str] = []
             classes_in_image: set[str] = set()
+            image_record = image_records.get(image_path.stem)
+            if image_record is None:
+                # Reviewed negative frames were added outside the original COCO
+                # subset, so they intentionally have no annotations to remap.
+                reviewed_negative_images[split] += 1
+                empty_label_files[split] += 1
+                (output_label_dir / f"{image_path.stem}.txt").write_text("", encoding="utf-8")
+                continue
+
+            image_width = float(image_record["width"])
+            image_height = float(image_record["height"])
 
             for annotation in annotations_by_image_id.get(int(image_record["id"]), []):
                 category_name = category_names.get(int(annotation["category_id"]), "unknown")
@@ -798,6 +804,7 @@ def make_coarse_multiclass_detection_dataset(
             for split in ("train", "val")
         },
         "empty_label_files": dict(empty_label_files),
+        "reviewed_negative_images": dict(reviewed_negative_images),
         "filtered_small_instances": dict(filtered_small_instances),
         "unmapped_annotation_counts": dict(sorted(unmapped_categories.items())),
     }

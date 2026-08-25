@@ -232,6 +232,75 @@ def plot_training_curves(
     return ax
 
 
+def plot_detection_training_summary(
+    results_csv_path: str | Path,
+    final_metrics: dict[str, object],
+    *,
+    title: str = "Detection fine-tuning summary",
+):
+    """Plot detection loss history beside the final validation metrics."""
+
+    plt, _ = _require_matplotlib()
+    path = Path(results_csv_path)
+    if not path.exists():
+        print(f"No results CSV found at {path}")
+        return None
+
+    with path.open("r", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    if not rows:
+        print(f"No rows found in {path}")
+        return None
+
+    epochs = [float(row.get("epoch", index + 1)) for index, row in enumerate(rows)]
+    loss_specs = [
+        ("train/box_loss", "box loss", "C0"),
+        ("train/cls_loss", "classification loss", "C1"),
+        ("train/dfl_loss", "distribution focal loss", "C2"),
+    ]
+    metric_specs = [
+        ("precision", "Precision"),
+        ("recall", "Recall"),
+        ("mAP50", "mAP@0.50"),
+        ("mAP50-95", "mAP@0.50–0.95"),
+    ]
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+    for column, label, color in loss_specs:
+        if column not in rows[0]:
+            continue
+        values = [float(row[column]) for row in rows]
+        axes[0].plot(epochs, values, color=color, linewidth=2, label=label)
+    axes[0].set_xlabel("epoch")
+    axes[0].set_ylabel("training loss (lower is better on the training set)")
+    axes[0].set_title("What the optimizer reduced")
+    axes[0].grid(True, alpha=0.25)
+    axes[0].legend(fontsize=9)
+
+    metric_labels = [label for key, label in metric_specs if key in final_metrics]
+    metric_values = [float(final_metrics[key]) for key, _ in metric_specs if key in final_metrics]
+    bars = axes[1].bar(metric_labels, metric_values, color=["C0", "C1", "C2", "C3"])
+    axes[1].set_ylim(0, 1)
+    axes[1].set_ylabel("score")
+    axes[1].set_title("Final held-out validation scores")
+    axes[1].tick_params(axis="x", rotation=18)
+    axes[1].grid(axis="y", alpha=0.25)
+    for bar, value in zip(bars, metric_values):
+        axes[1].text(
+            bar.get_x() + bar.get_width() / 2,
+            min(0.97, value + 0.03),
+            f"{value:.3f}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
+
+    fig.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+    return axes
+
+
 def plot_confusion_matrix(
     matrix,
     class_names: Sequence[str],
