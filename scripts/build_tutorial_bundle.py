@@ -37,6 +37,8 @@ YOLO100 = SOURCE_ROOT / "data" / "yolo_subset"
 SUBSET100 = SOURCE_ROOT / "data" / "subset"
 SUBSET500 = SOURCE_ROOT / "data" / "subset_500"
 LABEL_PLAN = SOURCE_ROOT / "configs" / "label_plans.yaml"
+BACKGROUND_NEGATIVE_ROOT = Path(__file__).resolve().parents[1] / "data" / "background_negatives"
+REFERENCE_TRAINING_ROOT = Path(__file__).resolve().parents[1] / "data" / "reference_training"
 YOLO_MIN_BOX_AREA = 0.005
 CLASSIFICATION_MAX_CLASSES = 12
 CLASSIFICATION_MIN_PER_CLASS = 20
@@ -154,61 +156,203 @@ def matching_image(label_path: Path, image_dir: Path) -> Path:
     raise FileNotFoundError(f"No image found for {label_path}")
 
 
-def write_yolo_yaml(dataset_dir: Path, *, task: str) -> None:
+def write_yolo_yaml(dataset_dir: Path, *, task: str, tutorial_note: str) -> None:
     content = {
         "path": ".",
         "train": "images/train",
         "val": "images/val",
         "nc": 1,
-        "names": {0: "object"},
+        "names": {0: "underwater organism"},
         "tutorial_task": task,
-        "tutorial_note": f"Objects with normalised bbox area below {YOLO_MIN_BOX_AREA} are omitted for workshop-scale training.",
+        "tutorial_note": tutorial_note,
     }
     with (dataset_dir / "dataset.yaml").open("w", encoding="utf-8") as handle:
         yaml.safe_dump(content, handle, sort_keys=False)
 
 
-def build_yolo_tasks(output_root: Path, *, image_quality: int, min_box_area: float) -> dict:
-    """Build binary YOLO datasets, filtering tiny objects for teachability."""
+def coco_bbox_to_detection_row(
+    bbox: list[float],
+    *,
+    image_width: int,
+    image_height: int,
+) -> list[float] | None:
+    """Convert one COCO ``[x, y, width, height]`` box to a binary YOLO row."""
 
-    task_counts = {"yolo_min_box_area": min_box_area}
-    for task in ["detect", "segment"]:
-        dataset_dir = output_root / f"yolo_{task}_binary"
-        for split in ["train", "val"]:
-            image_out = dataset_dir / "images" / split
-            label_out = dataset_dir / "labels" / split
-            image_out.mkdir(parents=True, exist_ok=True)
-            label_out.mkdir(parents=True, exist_ok=True)
+    x, y, width, height = (float(value) for value in bbox)
+    x0 = max(0.0, min(float(image_width), x))
+    y0 = max(0.0, min(float(image_height), y))
+    x1 = max(0.0, min(float(image_width), x + width))
+    y1 = max(0.0, min(float(image_height), y + height))
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return [
+        0,
+        ((x0 + x1) / 2) / image_width,
+        ((y0 + y1) / 2) / image_height,
+        (x1 - x0) / image_width,
+        (y1 - y0) / image_height,
+    ]
 
-            source_label_dir = YOLO100 / "labels" / split
-            source_image_dir = YOLO100 / "images" / split
-            image_count = 0
-            instance_count = 0
-            for label_path in sorted(source_label_dir.glob("*.txt")):
-                source_image = matching_image(label_path, source_image_dir)
-                convert_image_to_jpeg(source_image, image_out / f"{label_path.stem}.jpg", quality=image_quality)
 
-                rows = read_yolo_rows(label_path)
-                if task == "segment":
-                    output_rows = rows
+def build_coco_detection_task(
+    coco_json_path: Path,
+    source_image_root: Path,
+    dataset_dir: Path,
+    *,
+    image_quality: int | None,
+) -> dict:
+    """Build binary detection labels from every COCO bounding-box annotation."""
+
+    coco = load_json(coco_json_path)
+    images_by_stem = {Path(image["file_name"]).stem: image for image in coco["images"]}
+    annotations_by_image_id: dict[int, list[dict]] = defaultdict(list)
+    for annotation in coco["annotations"]:
+        annotations_by_image_id[int(annotation["image_id"])].append(annotation)
+
+    counts: dict[str, int | float] = {"detect_min_box_area": 0.0}
+    supported_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
+    for split in ["train", "val"]:
+        source_image_dir = source_image_root / split
+        image_out = dataset_dir / "images" / split
+        label_out = dataset_dir / "labels" / split
+        image_out.mkdir(parents=True, exist_ok=True)
+        if label_out.exists():
+            shutil.rmtree(label_out)
+        label_out.mkdir(parents=True, exist_ok=True)
+
+        source_images = sorted(
+            path for path in source_image_dir.iterdir()
+            if path.is_file() and path.suffix.lower() in supported_extensions
+        )
+        instance_count = 0
+        for source_image in source_images:
+            image_record = images_by_stem.get(source_image.stem)
+            if image_record is None:
+                raise KeyError(f"COCO metadata missing image {source_image.stem}")
+
+            destination_image = image_out / f"{source_image.stem}.jpg"
+            if source_image.resolve() != destination_image.resolve():
+                if image_quality is None:
+                    shutil.copy2(source_image, destination_image)
                 else:
-                    output_rows = [row for row in (segment_to_detection_row(row) for row in rows) if row is not None]
-                output_rows = [
-                    row
-                    for row in output_rows
-                    if yolo_row_box_area(row, task=task) >= min_box_area
-                ]
-                (label_out / label_path.name).write_text(
-                    "\n".join(format_yolo_row(row) for row in output_rows),
-                    encoding="utf-8",
+                    convert_image_to_jpeg(source_image, destination_image, quality=image_quality)
+
+            rows = [
+                row
+                for annotation in annotations_by_image_id.get(int(image_record["id"]), [])
+                if (row := coco_bbox_to_detection_row(
+                    annotation["bbox"],
+                    image_width=int(image_record["width"]),
+                    image_height=int(image_record["height"]),
+                )) is not None
+            ]
+            (label_out / f"{source_image.stem}.txt").write_text(
+                "\n".join(format_yolo_row(row) for row in rows),
+                encoding="utf-8",
+            )
+            instance_count += len(rows)
+
+        counts[f"detect_{split}_images"] = len(source_images)
+        counts[f"detect_{split}_instances"] = instance_count
+
+    background_counts = add_background_negatives(
+        dataset_dir,
+        image_quality=image_quality,
+    )
+    for split in ["train", "val"]:
+        negative_count = background_counts[f"detect_{split}_negative_images"]
+        counts[f"detect_{split}_images"] += negative_count
+        counts[f"detect_{split}_negative_images"] = negative_count
+
+    write_yolo_yaml(
+        dataset_dir,
+        task="detect",
+        tutorial_note="All available COCO bounding boxes are retained, including small objects.",
+    )
+    return counts
+
+
+def add_background_negatives(
+    dataset_dir: Path,
+    *,
+    image_quality: int | None,
+) -> dict[str, int]:
+    """Add manually reviewed frames containing no clearly visible target organism."""
+
+    counts: dict[str, int] = {}
+    for split in ["train", "val"]:
+        source_dir = BACKGROUND_NEGATIVE_ROOT / split
+        image_out = dataset_dir / "images" / split
+        label_out = dataset_dir / "labels" / split
+        source_images = sorted(source_dir.glob("*.jpg"))
+
+        for source_image in source_images:
+            destination_image = image_out / source_image.name
+            if image_quality is None:
+                shutil.copy2(source_image, destination_image)
+            else:
+                convert_image_to_jpeg(
+                    source_image,
+                    destination_image,
+                    quality=image_quality,
                 )
-                image_count += 1
-                instance_count += len(output_rows)
+            # An empty YOLO label is the explicit target for a negative frame:
+            # the model should not predict an organism anywhere in this image.
+            (label_out / f"{source_image.stem}.txt").write_text("", encoding="utf-8")
 
-            task_counts[f"{task}_{split}_images"] = image_count
-            task_counts[f"{task}_{split}_instances"] = instance_count
+        counts[f"detect_{split}_negative_images"] = len(source_images)
 
-        write_yolo_yaml(dataset_dir, task=task)
+    return counts
+
+
+def build_yolo_tasks(output_root: Path, *, image_quality: int, min_box_area: float) -> dict:
+    """Build complete COCO-box detection labels and workshop-scale segmentation labels."""
+
+    task_counts = build_coco_detection_task(
+        SUBSET100 / "subset.json",
+        YOLO100 / "images",
+        output_root / "yolo_detect_binary",
+        image_quality=image_quality,
+    )
+    task_counts["segment_min_box_area"] = min_box_area
+    dataset_dir = output_root / "yolo_segment_binary"
+    for split in ["train", "val"]:
+        image_out = dataset_dir / "images" / split
+        label_out = dataset_dir / "labels" / split
+        image_out.mkdir(parents=True, exist_ok=True)
+        label_out.mkdir(parents=True, exist_ok=True)
+
+        source_label_dir = YOLO100 / "labels" / split
+        source_image_dir = YOLO100 / "images" / split
+        image_count = 0
+        instance_count = 0
+        for label_path in sorted(source_label_dir.glob("*.txt")):
+            source_image = matching_image(label_path, source_image_dir)
+            convert_image_to_jpeg(source_image, image_out / f"{label_path.stem}.jpg", quality=image_quality)
+
+            output_rows = [
+                row
+                for row in read_yolo_rows(label_path)
+                if yolo_row_box_area(row, task="segment") >= min_box_area
+            ]
+            (label_out / label_path.name).write_text(
+                "\n".join(format_yolo_row(row) for row in output_rows),
+                encoding="utf-8",
+            )
+            image_count += 1
+            instance_count += len(output_rows)
+
+        task_counts[f"segment_{split}_images"] = image_count
+        task_counts[f"segment_{split}_instances"] = instance_count
+
+    write_yolo_yaml(
+        dataset_dir,
+        task="segment",
+        tutorial_note=(
+            f"Objects with normalised bbox area below {min_box_area} are omitted "
+            "for workshop-scale segmentation training."
+        ),
+    )
     return task_counts
 
 
@@ -488,12 +632,7 @@ def build_cached_training(output_root: Path) -> dict:
         writer.writerows(classification_rows)
 
     source_results = {
-        "detection": SOURCE_ROOT
-        / "data"
-        / "trained-models"
-        / "detect_binary_9951521"
-        / "det_bin_megalodon_b8_lr5e4_s42"
-        / "results.csv",
+        "detection": REFERENCE_TRAINING_ROOT / "underwater_detection_results.csv",
         "segmentation": SOURCE_ROOT
         / "data"
         / "trained-models"
@@ -541,6 +680,23 @@ def write_attribution(output_root: Path) -> dict:
             }
         )
 
+    background_manifest = BACKGROUND_NEGATIVE_ROOT / "manifest.csv"
+    with background_manifest.open("r", encoding="utf-8", newline="") as handle:
+        for record in csv.DictReader(handle):
+            rows.append(
+                {
+                    "file_name": f"{record['uuid']}.jpg",
+                    "source": "FathomNet manually reviewed organism-negative frame",
+                    "source_url": record["source_url"],
+                    "terms_url": "https://www.fathomnet.org/terms",
+                    "data_use_url": "https://www.fathomnet.org/datause",
+                    "license_note": (
+                        "Visual content is subject to contributor-selected Creative Commons terms; "
+                        f"tutorial review note: {record['review_note']}"
+                    ),
+                }
+            )
+
     licenses_dir = output_root / "licenses"
     licenses_dir.mkdir(parents=True, exist_ok=True)
     with (licenses_dir / "attribution.csv").open("w", encoding="utf-8", newline="") as handle:
@@ -554,7 +710,10 @@ def write_manifest(output_root: Path, stats: dict) -> None:
     manifest = {
         "name": "fathomnet_underwater_tutorial_bundle",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
-        "description": "Compact data bundle for an underwater computer vision tutorial.",
+        "description": (
+            "Compact underwater-vision tutorial bundle with complete COCO-box detection targets "
+            "and manually reviewed organism-negative frames."
+        ),
         "source_repositories": {
             "yolo_segmentation": str(SOURCE_ROOT),
             "sam3": str(SOURCE_SAM3_ROOT),
