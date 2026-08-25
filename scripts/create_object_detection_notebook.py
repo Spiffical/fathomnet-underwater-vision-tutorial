@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 from pathlib import Path
 
@@ -13,23 +12,6 @@ def md(source: str) -> dict:
         "metadata": {},
         "source": source.strip("\n").splitlines(keepends=True),
     }
-
-
-def md_with_png_attachment(
-    source: str,
-    *,
-    image_path: Path,
-    attachment_name: str,
-) -> dict:
-    """Create a Markdown cell with a self-contained PNG attachment."""
-
-    cell = md(source)
-    cell["attachments"] = {
-        attachment_name: {
-            "image/png": base64.b64encode(image_path.read_bytes()).decode("ascii")
-        }
-    }
-    return cell
 
 
 def code(source: str) -> dict:
@@ -45,7 +27,7 @@ def code(source: str) -> dict:
 def build_notebook() -> dict:
     repo_root = Path(__file__).resolve().parents[1]
     cells = [
-        md_with_png_attachment(
+        md(
             r"""
 # Underwater Object Detection with FathomNet
 
@@ -53,7 +35,7 @@ def build_notebook() -> dict:
 
 This self-contained tutorial teaches **object detection**: finding each object in an image and drawing a rectangular **bounding box** around it.
 
-![An underwater scene shown first without annotations and then with all seven available bounding boxes](attachment:object_detection_overview.png)
+![An underwater scene shown first without annotations and then with all seven available bounding boxes](https://raw.githubusercontent.com/Spiffical/fathomnet-underwater-vision-tutorial/main/docs/images/object_detection_overview.png)
 
 *The same FathomNet-derived scene is shown raw and with reference annotations. Each rectangle localizes one object instance; repeated class names are expected when several sponges are present.*
 
@@ -80,9 +62,7 @@ Reference links:
 - Megalodon 2024 YOLO11 checkpoint: https://huggingface.co/FathomNet/megalodon-2024-yolov11
 - SAM3 repository: https://github.com/facebookresearch/sam3
 - SAM3 image predictor example: https://github.com/facebookresearch/sam3/blob/main/examples/sam3_image_predictor_example.ipynb
-""",
-            image_path=repo_root / "docs" / "images" / "object_detection_overview.png",
-            attachment_name="object_detection_overview.png",
+"""
         ),
         md(
             r"""
@@ -126,7 +106,7 @@ Terms specific to data splits, optimisation, and evaluation are introduced immed
 The first cell locates the project root. In Colab it clones the repository into `/content` when needed; locally, launch Jupyter from the repository or one of its subdirectories.
 """
         ),
-        md_with_png_attachment(
+        md(
             r"""
 ### In Google Colab: select a GPU
 
@@ -136,12 +116,10 @@ Before running any setup code:
 2. Under **Hardware accelerator**, select **T4 GPU** or another available NVIDIA GPU.
 3. Click **Save**, then run the notebook from the top.
 
-![Google Colab Change runtime type dialog with T4 GPU selected](attachment:colab_gpu_runtime.png)
+![Google Colab Change runtime type dialog with T4 GPU selected](https://raw.githubusercontent.com/Spiffical/fathomnet-underwater-vision-tutorial/main/docs/images/colab_gpu_runtime.png)
 
 The setup report should identify a CUDA device and print `Live fine-tuning: True`. GPU availability depends on your Colab account and current capacity. If no GPU is available, the notebook still runs using its clearly labelled saved training results.
-""",
-            image_path=repo_root / "docs" / "images" / "colab_gpu_runtime.png",
-            attachment_name="colab_gpu_runtime.png",
+"""
         ),
         code(
             r"""
