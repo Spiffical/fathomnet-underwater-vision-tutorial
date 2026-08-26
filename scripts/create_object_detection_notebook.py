@@ -178,7 +178,7 @@ Colab installs the tested, **pinned** versions—fixed versions chosen for repro
 
 Training is fastest on a **graphics processing unit (GPU)**. NVIDIA GPUs use **Compute Unified Device Architecture (CUDA)**; Apple Silicon uses **Metal Performance Shaders (MPS)**. The setup chooses CUDA first, then MPS, then a **central processing unit (CPU)**.
 
-CPU training is optional because its speed varies widely. The complete 35-epoch recipe took about 1.5 minutes on one recent MacBook CPU, but other computers may take substantially longer. CPU-only runs therefore use the saved reference result by default. To try live CPU fine-tuning, change `RUN_CPU_FINE_TUNING` to `True` in the setup cell. GPU and MPS runtimes train live automatically.
+CPU training is optional because its speed varies widely. The complete 35-epoch recipe took about 1.5 minutes on one recent MacBook CPU, but other computers may take substantially longer. CPU-only runs therefore use the saved reference result by default. To try live CPU fine-tuning, change `RUN_CPU_FINE_TUNING` to `True` in the setup cell below. GPU and MPS runtimes train live automatically.
 
 The setup fixes the random seed at `42` to reduce run-to-run variation, although small numerical differences can still occur across hardware.
 """
@@ -455,7 +455,7 @@ Supervised machine learning normally separates data by role:
 - the **validation set** is kept out of weight updates and is used to compare settings and estimate **generalisation**, meaning performance on new data; and
 - a **test set**, when available, is reserved for a final evaluation after all modelling choices are fixed.
 
-The tutorial dataset contains **83 training images** and **21 validation images**, but no separate test split. It includes four manually reviewed **negative frames**, whose empty YOLO label files explicitly mean “no clearly visible target organism.” Three negatives expose the model to open water, sediment, suspended particles, blur, and ROV equipment during training; the fourth checks for false alarms on held-out open water.
+The tutorial dataset contains **83 training images** and **21 validation images**, but no separate test split. It includes four manually reviewed **negative frames**, whose empty YOLO label files explicitly mean "no clearly visible target organism." Three negatives expose the model to open water, sediment, suspended particles, blur, and ROV equipment during training; the fourth checks for false alarms on held-out open water.
 
 The helper also writes a YAML dataset configuration containing the training and validation paths and class names. `FINE_TUNE_YAML` is the path to that file.
 
@@ -522,7 +522,7 @@ Training repeatedly compares predictions with annotations using a numerical **lo
 - `lr0=0.001`: the initial **learning rate**, which controls the size of weight updates; and
 - `optimizer="AdamW"`: the specific update rule used to apply those changes.
 
-Thirty-five epochs sounds large, but each epoch contains only five batches. Per-epoch validation is disabled to keep the demonstration short; one validation pass runs at the end. The run saves `last.pt` for the final epoch and `best.pt` for the checkpoint Ultralytics selects for evaluation.
+Each epoch contains only five batches. Per-epoch validation is disabled to keep the demonstration short; one validation pass runs at the end. The run saves `last.pt` for the final epoch and `best.pt` for the checkpoint Ultralytics selects for evaluation.
 
 Exact timing depends on the hardware. CPU-only execution skips training and uses the saved results below unless you enabled the CPU opt-in during setup. The tested full CPU recipe completed in about 1.5 minutes on one recent MacBook, but that timing should not be assumed for other machines.
 
@@ -820,27 +820,43 @@ if fine_tuned_model is not None:
 else:
     fine_tuned_results = None
 
-def show_reference_prediction(ax, image_path, reference):
+def show_reference_prediction(
+    ax,
+    image_path,
+    reference,
+    *,
+    class_names=None,
+    color="deepskyblue",
+):
     ax.imshow(Image.open(image_path).convert("RGB"))
-    for box, score in zip(reference["boxes"], reference["scores"]):
+    class_ids = reference.get("class_ids", [0] * len(reference["boxes"]))
+    for box, score, class_id in zip(reference["boxes"], reference["scores"], class_ids):
         x0, y0, x1, y1 = box
         ax.add_patch(patches.Rectangle(
             (x0, y0), x1 - x0, y1 - y0,
-            fill=False, edgecolor="deepskyblue", linewidth=2,
+            fill=False, edgecolor=color, linewidth=2,
         ))
-        ax.text(x0, y0, f"underwater organism {score:.2f}", color="black", backgroundcolor="deepskyblue")
+        if class_names is None:
+            label = "underwater organism"
+        elif isinstance(class_names, dict):
+            label = class_names.get(int(class_id), str(class_id))
+        else:
+            label = class_names[int(class_id)]
+        ax.text(x0, y0, f"{label} {score:.2f}", color="black", backgroundcolor=color)
     ax.axis("off")
 
 def filter_reference_prediction(reference, threshold):
     # Apply the same confidence rule to saved predictions that predict(conf=...) applies live.
+    class_ids = reference.get("class_ids", [0] * len(reference["boxes"]))
     retained = [
-        (box, score)
-        for box, score in zip(reference["boxes"], reference["scores"])
+        (box, score, class_id)
+        for box, score, class_id in zip(reference["boxes"], reference["scores"], class_ids)
         if score >= threshold
     ]
     return {
-        "boxes": [box for box, _ in retained],
-        "scores": [score for _, score in retained],
+        "boxes": [box for box, _, _ in retained],
+        "scores": [score for _, score, _ in retained],
+        "class_ids": [class_id for _, _, class_id in retained],
     }
 
 fig, axes = plt.subplots(2, 3, figsize=(17, 9))
@@ -956,7 +972,7 @@ for threshold, count, score_range in threshold_rows:
             r"""
 ### Exercise answer
 
-Increasing the threshold can only keep the same number of predictions or remove some; it cannot reveal a new low-confidence box. Precision often rises because weak false positives disappear, while recall often falls because some real objects also had weak scores. “Often” matters: the direction is not guaranteed on one image or a tiny sample.
+Increasing the threshold can only keep the same number of predictions or remove some; it cannot reveal a new low-confidence box. Precision often rises because weak false positives disappear, while recall often falls because some real objects also had weak scores. The direction is not guaranteed on one image or a tiny sample.
 
 The plots make the trade-off concrete. A removed box helps measured precision if it was unmatched, but hurts measured recall if it covered an annotated COCO target. Detection count alone cannot tell us which happened. Dataset-level precision and recall require matching predictions to the chosen reference annotations with an IoU rule, as described above.
 """
@@ -1291,11 +1307,13 @@ Its location may be good, but it cannot match the ground-truth object as the cor
 
 We again start from `yolo11n.pt`, the vanilla COCO detector. Ultralytics reads the five class names from `MULTICLASS_YAML` and adapts the detection head from its original 80 COCO outputs to five workshop classes. The rest of the network still begins with useful pretrained visual features.
 
-Set `RUN_MULTICLASS_FINE_TUNING = True` to run the 30-epoch exercise. It is off by default so the appendix does not add several minutes to “Run All.” If training is skipped, the cell reports saved metrics from a previous run of this recipe; it does not pretend to create live predictions.
+Set `RUN_MULTICLASS_FINE_TUNING = True` to run the 30-epoch exercise. It is off by default so the appendix does not add several minutes to “Run All.” If training is skipped, the next two cells show saved metrics, loss curves, and predictions from a previous run of this exact recipe. Their titles identify them as saved results rather than live output.
 """
         ),
         code(
             r"""
+from scripts.tutorial_viz import plot_detection_training_summary
+
 # Keep appendix training opt-in so every reader can inspect the data and saved metrics quickly.
 RUN_MULTICLASS_FINE_TUNING = False
 MULTICLASS_EPOCHS = 30
@@ -1340,6 +1358,7 @@ if RUN_MULTICLASS_FINE_TUNING:
         seed=42,
     )
     multiclass_save_dir = Path(multiclass_model.trainer.save_dir)
+    multiclass_results_csv = multiclass_save_dir / "results.csv"
     multiclass_best = multiclass_save_dir / "weights" / "best.pt"
     multiclass_last = multiclass_save_dir / "weights" / "last.pt"
     # Fall back to the final epoch if this training configuration did not create best.pt.
@@ -1371,38 +1390,108 @@ if RUN_MULTICLASS_FINE_TUNING:
     }
 else:
     multiclass_summary = MULTICLASS_REFERENCE_SUMMARY
+    multiclass_results_csv = (
+        REPO_ROOT / "data" / "reference_training" / "multiclass_detection_results.csv"
+    )
 
 print(json.dumps(multiclass_summary, indent=2))
+multiclass_history_mode = (
+    "live training history"
+    if RUN_MULTICLASS_FINE_TUNING
+    else "saved history from the same 30-epoch recipe"
+)
+print(f"Plot source: {multiclass_history_mode}")
+_ = plot_detection_training_summary(
+    multiclass_results_csv,
+    multiclass_summary,
+    title="Vanilla YOLO11n fine-tuned for five underwater class groups",
+)
 """
         ),
         code(
             r"""
-if multiclass_model is None:
-    print(
-        "Live multi-class training is off. The ground-truth figure above remains available; "
-        "set RUN_MULTICLASS_FINE_TUNING = True and rerun the training cell to plot predictions."
-    )
-else:
+MULTICLASS_DISPLAY_CONF = 0.05
+# These saved detections came from the reference run summarized above. Coordinates
+# use [x_min, y_min, x_max, y_max] pixels in the original images.
+MULTICLASS_REFERENCE_PREDICTIONS = {
+    SCENE_IDS[0]: {
+        "boxes": [
+            [481.7, 530.3, 629.2, 690.3],
+            [285.3, 645.9, 421.1, 745.8],
+            [761.4, 610.5, 942.7, 729.2],
+            [1005.6, 577.3, 1105.8, 706.2],
+            [0.0, 814.3, 180.5, 1059.6],
+            [602.5, 746.7, 772.8, 907.3],
+            [160.8, 460.5, 402.1, 611.9],
+            [1.4, 335.9, 106.3, 494.7],
+            [969.8, 33.6, 1392.2, 510.8],
+            [305.2, 645.2, 413.8, 743.2],
+        ],
+        "scores": [0.5499, 0.1152, 0.0800, 0.0761, 0.0735, 0.0561, 0.0540, 0.0532, 0.0360, 0.0350],
+        "class_ids": [4, 1, 4, 4, 4, 4, 4, 4, 4, 2],
+    },
+    SCENE_IDS[1]: {
+        "boxes": [
+            [298.6, 116.9, 432.5, 187.6],
+            [381.8, 123.4, 444.0, 183.6],
+            [298.6, 115.5, 453.0, 197.2],
+            [463.3, 136.5, 525.0, 185.8],
+            [294.9, 118.3, 435.8, 202.3],
+            [379.5, 121.3, 443.9, 194.5],
+            [297.8, 117.8, 448.7, 209.0],
+            [296.8, 117.8, 451.4, 207.0],
+            [460.5, 132.6, 527.6, 188.0],
+            [375.4, 154.6, 426.0, 204.4],
+        ],
+        "scores": [0.0476, 0.0447, 0.0408, 0.0378, 0.0327, 0.0308, 0.0303, 0.0298, 0.0238, 0.0104],
+        "class_ids": [3, 3, 0, 2, 2, 2, 3, 4, 3, 2],
+    },
+}
+
+if multiclass_model is not None:
     multiclass_predictions = multiclass_model.predict(
         SCENE_IMAGES,
         imgsz=MULTICLASS_IMGSZ,
-        conf=0.05,
+        conf=MULTICLASS_DISPLAY_CONF,
         max_det=10,
         device=DEVICE,
         verbose=False,
     )
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    for ax, result, scene_id in zip(axes, multiclass_predictions, SCENE_IDS):
+else:
+    multiclass_predictions = None
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+for index, (ax, image_path, scene_id) in enumerate(zip(axes, SCENE_IMAGES, SCENE_IDS)):
+    if multiclass_predictions is not None:
+        result = multiclass_predictions[index]
         ax.imshow(result.plot()[..., ::-1])
         ax.axis("off")
         ax.set_title(f"live five-class prediction — {scene_id[:8]}")
-    plt.tight_layout()
-    plt.show()
+    else:
+        saved_prediction = filter_reference_prediction(
+            MULTICLASS_REFERENCE_PREDICTIONS[scene_id],
+            MULTICLASS_DISPLAY_CONF,
+        )
+        show_reference_prediction(
+            ax,
+            image_path,
+            saved_prediction,
+            class_names=MULTICLASS_NAMES,
+            color="cyan",
+        )
+        ax.set_title(
+            f"saved five-class prediction — {len(saved_prediction['boxes'])} boxes "
+            f"at confidence ≥ {MULTICLASS_DISPLAY_CONF:.2f}"
+        )
+plt.tight_layout()
+plt.show()
 """
         ),
         md(
             r"""
 ### Interpreting the saved result: when a metric is not enough
+
+At the displayed confidence threshold of `0.05`, the saved predictions contain several overlapping boxes in the sponge-rich scene and no boxes in the crustacean scene. This is a useful visual warning: a model can produce many class-labelled boxes while still having weak recall and poor localization.
 
 The saved run has an overall `mAP50` of `0.126`. The gelatinous and sponge/cnidarian groups score better than the other groups, while fish has an `mAP50` of `0.000`. That zero does **not** establish that YOLO cannot learn to detect fish. It means that the model did not correctly match the single retained fish instance in this particular validation split at IoU 0.50.
 
@@ -1508,7 +1597,7 @@ After the class ID, each pair of values represents one polygon vertex. A simple 
 - **box mAP** matches predictions using bounding-box IoU; and
 - **mask mAP** matches predictions using pixel-mask IoU.
 
-Set `RUN_SEGMENTATION_FINE_TUNING = True` to run this 30-epoch exercise. With the switch off, the code plots saved curves from an earlier segmentation run included in the data bundle. Those curves are a reference, not the output of the optional recipe below, and the bundle does not include that run's checkpoint.
+Set `RUN_SEGMENTATION_FINE_TUNING = True` to run this 30-epoch exercise. With the switch off, the next two cells show saved metrics, curves, and mask overlays from an earlier run of this exact recipe. The saved overlays use a confidence threshold of `0.20`. Their titles identify them as saved results, and the checkpoint itself is not included.
 """
         ),
         code(
@@ -1567,12 +1656,20 @@ if RUN_SEGMENTATION_FINE_TUNING:
     }
     segmentation_results_csv = live_results_csv
 else:
-    # Saved curves keep the appendix useful without requiring a second training run.
+    # Saved curves and summary keep the appendix useful without a second training run.
     segmentation_summary = {
-        "mode": "training skipped; showing saved curves from an earlier segmentation run"
+        "mode": "saved results from a previous 30-epoch appendix run",
+        "box_precision": 0.355,
+        "box_recall": 0.338,
+        "box_mAP50": 0.246,
+        "box_mAP50-95": 0.166,
+        "mask_precision": 0.355,
+        "mask_recall": 0.338,
+        "mask_mAP50": 0.238,
+        "mask_mAP50-95": 0.130,
     }
     segmentation_results_csv = (
-        BUNDLE_ROOT / "cached_training" / "segmentation" / "results.csv"
+        REPO_ROOT / "data" / "reference_training" / "segmentation_results.csv"
     )
 
 print(json.dumps(segmentation_summary, indent=2))
@@ -1591,27 +1688,37 @@ _ = plot_training_curves(
         ),
         code(
             r"""
-if segmentation_model is None:
-    print(
-        "Live segmentation training is off. Set RUN_SEGMENTATION_FINE_TUNING = True "
-        "and rerun the training cell to plot predicted masks."
-    )
-else:
+SEGMENTATION_DISPLAY_CONF = 0.20
+if segmentation_model is not None:
     segmentation_predictions = segmentation_model.predict(
         SCENE_IMAGES,
         imgsz=SEGMENTATION_IMGSZ,
-        conf=0.20,
+        conf=SEGMENTATION_DISPLAY_CONF,
         max_det=10,
         device=DEVICE,
         verbose=False,
     )
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    for ax, result, scene_id in zip(axes, segmentation_predictions, SCENE_IDS):
+else:
+    segmentation_predictions = None
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+for index, (ax, scene_id) in enumerate(zip(axes, SCENE_IDS)):
+    if segmentation_predictions is not None:
+        result = segmentation_predictions[index]
         ax.imshow(result.plot()[..., ::-1])
-        ax.axis("off")
-        ax.set_title(f"live instance-segmentation prediction — {scene_id[:8]}")
-    plt.tight_layout()
-    plt.show()
+        ax.set_title(f"live mask prediction — {scene_id[:8]}")
+    else:
+        reference_image = (
+            REPO_ROOT
+            / "data"
+            / "reference_training"
+            / f"appendix_segmentation_{scene_id}.jpg"
+        )
+        ax.imshow(Image.open(reference_image).convert("RGB"))
+        ax.set_title(f"saved mask prediction — {scene_id[:8]}")
+    ax.axis("off")
+plt.tight_layout()
+plt.show()
 """
         ),
         md(
@@ -1624,7 +1731,7 @@ When is a mask worth the added annotation cost?
 
 Use masks when the analysis depends on object area, contour, contact between organisms, partial occlusion, shape, or precise separation from the background. If approximate location or counting is enough, boxes are usually cheaper and easier to label consistently.
 
-The same distinction applies to evaluation: good box mAP does not guarantee good mask mAP. A prediction can surround the right object while tracing its boundary poorly.
+The same distinction applies to evaluation: good box mAP does not guarantee good mask mAP. A prediction can surround the right object while tracing its boundary poorly. The saved plot demonstrates both outcomes: the crustacean scene contains two localized masks, while the first scene contains one very large mask that spills across equipment, background, and several organisms. A mask is more detailed than a box, but detail does not make an incorrect prediction trustworthy.
 
 ### Putting the extensions together
 
